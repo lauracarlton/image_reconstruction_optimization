@@ -177,7 +177,7 @@ for sigma_brain in sigma_brain_list:
                         W_indirect, D_indirect, F_indirect = irf.calculate_W(A_single_wl, alpha_meas, alpha_spatial, DIRECT=False,
                                                      C_meas_flag=True, C_meas=C_meas, D=D_indirect, F=F_indirect)
                        
-                        W_single_wl = W_indirect.sel(wavelength=850)
+                        W_single_wl = W_indirect.isel(wavelength=WL_IDX)
 
                         # get the image of the blob
                         blob_img = synthetic_hrf.build_blob_from_seed_vertex(head, vertex = seed_vertex, scale = BLOB_SIGMA)
@@ -205,7 +205,7 @@ for sigma_brain in sigma_brain_list:
                                          dims=('vertex'),
                                          coords={'is_brain':('vertex', A_fw.is_brain.values)})
                         
-                        cov_img_tmp = W_single_wl *np.sqrt(C_meas.sel(wavelength=850).values) # W is pseudo inverse  --- diagonal (faster than W C W.T)
+                        cov_img_tmp = W_single_wl *np.sqrt(C_meas.isel(wavelength=WL_IDX).values) # W is pseudo inverse  --- diagonal (faster than W C W.T)
                         cov_img_diag = np.nansum(cov_img_tmp**2, axis=1)
                         
                         if sigma_brain > 0:
