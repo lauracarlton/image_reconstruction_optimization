@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
+Use this script to generate the metrics used downstream to generate the Figure 5 of 
+"Surface-Based Image Reconstruction Optimization for High-Density Functional Near Infrared Spectroscopy"
+
 For a given set of image recon parameters
 - get the metrics on the subject average at each vertex
 - specify the root directory, size the of the blob, scale of the HRF, list of seed vertices
@@ -11,16 +14,17 @@ configure the following parameters:
     - HEAD_MODEL: which atlas to use - options in cedalion are Colin27 and ICBM152
     - GLM_METHOD: which solving method was used in preprocessing of augmented data - ols or ar_irls
     - TASK: which of the tasks in the BIDS dataset was augmented 
-    - BLOB_SIGMA: the standard deviation of the Gaussian blob of activation (mm)
+    - BLOB_SIGMA: the standard deviation of the Gaussian blob of activation (mm) * MUST HAVE UNITS *
     - SCALE_FACTOR: the amplitude of the maximum change in 850nm OD in channel space
     - WL_IDX: index of the wavelength to use for the single wavelength simulation
     - VERTEX_LIST: list of seed vertices to be used 
     - exclude_subj: any subjects IDs within the BIDs dataset to be excluded
+    
 choose the image recon parameters to test 
-- select range of alpha measurement
-- select range of alpha spatial 
-- select range of sigma brain 
-- select range of sigma scalp 
+- alpha_meas_list: select range of alpha measurement
+- alpha_spatial_list: select range of alpha spatial 
+- sigma_brain_list: select range of sigma brain 
+- sigma_scalp_list: select range of sigma scalp 
 
 @author: lcarlton
 """
@@ -37,7 +41,7 @@ import numpy as np
 import xarray as xr
 
 import cedalion.sim.synthetic_hrf as synthetic_hrf
-from cedalion import units, nirs, xrutils, io
+from cedalion import units, io
 from cedalion.io.forward_model import load_Adot
 
 sys.path.append('/projectnb/nphfnirs/s/users/lcarlton/ANALYSIS_CODE/imaging_paper_figure_code/modules/')
@@ -48,7 +52,7 @@ import get_image_metrics as gim
 warnings.filterwarnings('ignore')
 
 #%% CONFIG 
-ROOT_DIR = "/projectnb/nphfnirs/s/datasets/BSMW_Laura_Miray_2025/BS_bids/"
+ROOT_DIR = os.path.join('/projectnb', 'nphfnirs', 's', 'datasets', 'BSMW_Laura_Miray_2025', 'BS_bids')
 HEAD_MODEL = 'ICBM152'
 GLM_METHOD = 'ols'
 TASK = 'RS'
@@ -72,14 +76,9 @@ dirs = os.listdir(ROOT_DIR)
 subject_list = [d for d in dirs if 'sub' in d and d not in exclude_subj]
 
 # HEAD PARAMS
-MASK_THRESHOLD = -2
-position_skew = [700, 100, 0]
+MASK_THRESHOLD = -2 # log of sensitivity threshold 
 
 #%% LOAD DATA
-subj_temp =  subject_list[0] + '/nirs/' + subject_list[0] + '_task-RS_run-01_nirs.snirf'
-file_name = os.path.join(ROOT_DIR, subj_temp)
-rec = io.read_snirf(file_name)[0]
-
 head, parcel_dir = irf.load_head_model(with_parcels=False)
 Adot = load_Adot(os.path.join(PROBE_DIR, 'Adot.nc'))
 
@@ -89,11 +88,10 @@ A_fw = Adot.isel(wavelength = 1)
 nV_brain = A_fw.is_brain.sum().values
 
 #%% LOAD IN CMEAS
-with open(SAVE_DIR + f"C_meas_subj_{BLOB_SIGMA.magnitude}mm_scale-{SCALE_FACTOR}_{NOISE_MODEL}.pkl", 'rb') as f:
+with open(os.path.join(SAVE_DIR, f"C_meas_subj_task-{TASK}_blob-{BLOB_SIGMA.magnitude}mm_scale-{SCALE_FACTOR}_{GLM_METHOD}.pkl"), 'rb') as f:
     C_meas_list = pickle.load(f)
     
 #%% GET THE METRICS FOR ALL VERTICES
-  
 FWHM = xr.DataArray(np.zeros([len(alpha_meas_list), len(alpha_spatial_list), len(sigma_brain_list), len(sigma_scalp_list), len(VERTEX_LIST)]),
                       dims = ['alpha_meas', 'alpha_spatial', 'sigma_brain', 'sigma_scalp', 'vertex'],
                       coords = {'alpha_meas': alpha_meas_list,
@@ -108,32 +106,34 @@ localization_error = FWHM.copy()
 perc_predicted_brain = FWHM.copy()
 contrast_ratio = FWHM.copy()
     
-M = sbf.get_sensitivity_mask(Adot, MASK_THRESHOLD, 1)
+M = sbf.get_sensitivity_mask(Adot, MASK_THRESHOLD, WL_IDX)
 
 for sigma_brain in sigma_brain_list: 
      
     if sigma_brain > 0:
         print(f'\tsigma brain = {sigma_brain.magnitude}')
-        if os.path.exists(PROBE_DIR + f'/G_matrix_sigmabrain-{sigma_brain}.pkl'):
-            with open(PROBE_DIR + f'/G_matrix_sigmabrain-{sigma_brain}.pkl', 'rb') as f:
+        G_brain_path = os.path.join(PROBE_DIR, f'/G_matrix_sigmabrain-{sigma_brain}.pkl')
+        if os.path.exists(G_brain_path):
+            with open(G_brain_path, 'rb') as f:
                 G_brain = pickle.load(f)
         else:
             brain_downsampled = sbf.downsample_mesh(head.brain.vertices, M[M.is_brain], sigma_brain*units.mm)
             G_brain = sbf.get_kernel_matrix(brain_downsampled, head.brain.vertices, sigma_brain*units.mm)
-            with open(PROBE_DIR + f'/G_matrix_sigmabrain-{sigma_brain}.pkl', 'wb') as f:
+            with open(G_brain_path, 'wb') as f:
                     pickle.dump(G_brain, f)
 
     for sigma_scalp in sigma_scalp_list:
         
         if sigma_scalp > 0 and sigma_brain > 0:
             print(f'\tsigma scalp = {sigma_scalp.magnitude}')
-            if os.path.exists( PROBE_DIR + f'/G_matrix_sigmascalp-{sigma_scalp}.pkl'):
-                with open(PROBE_DIR + f'/G_matrix_sigmascalp-{sigma_scalp}.pkl', 'rb') as f:
+            G_scalp_path = os.path.join(PROBE_DIR, f'/G_matrix_sigmascalp-{sigma_scalp}.pkl')
+            if os.path.exists(G_scalp_path):
+                with open(G_scalp_path, 'rb') as f:
                     G_scalp = pickle.load(f)
             else:
                 scalp_downsampled = sbf.downsample_mesh(head.scalp.vertices, M[~M.is_brain], sigma_scalp*units.mm)
                 G_scalp = sbf.get_kernel_matrix(scalp_downsampled, head.scalp.vertices, sigma_scalp*units.mm)
-                with open(PROBE_DIR + f'/G_matrix_sigmascalp-{sigma_scalp}.pkl', 'wb') as f:
+                with open(G_scalp_path, 'wb') as f:
                         pickle.dump(G_scalp, f)
 
             G = {'G_brain': G_brain,
@@ -244,7 +244,7 @@ for sigma_brain in sigma_brain_list:
                                         
                     X_mse_weighted_between_subjects_tmp = (all_subj_X_hrf_mag - X_hrf_mag_mean_weighted)**2 / all_subj_X_mse # X_mse_subj_tmp is weights for each sub
                     X_mse_weighted_between_subjects = X_mse_weighted_between_subjects_tmp.mean('subj')
-                    X_mse_weighted_between_subjects = X_mse_weighted_between_subjects * X_mse_mean_within_subject # / (all_subj_X_mse**-1).mean('subj')
+                    X_mse_weighted_between_subjects = X_mse_weighted_between_subjects * X_mse_mean_within_subject
                     X_mse_weighted_between_subjects = X_mse_weighted_between_subjects.pint.dequantify()
                     
                     # get the weighted average
@@ -290,7 +290,7 @@ RESULTS = {'FWHM': FWHM,
     }
 
 print('saving the data')
-with open(SAVE_DIR + f'COMPILED_METRIC_RESULTS_{BLOB_SIGMA.magnitude}mm_scale-{SCALE_FACTOR}_{GLM_METHOD}_single_wl.pkl', 'wb') as f:
+with open(os.path.join(SAVE_DIR, f'COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA.magnitude}mm_scale-{SCALE_FACTOR}_{GLM_METHOD}_single_wl.pkl'), 'wb') as f:
     pickle.dump(RESULTS, f)
 
 # %%

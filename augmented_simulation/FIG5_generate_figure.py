@@ -5,12 +5,13 @@ Use this script to generate the images that are included in Figure 5 of
 "Surface-Based Image Reconstruction Optimization for High-Density Functional Near Infrared Spectroscopy"
 
 Configurables:
-- ROOT_DIR -> path to your bids dataset
-- BLOB_SIGMA -> size of the Gaussian blob used to generate the augmented data
-- SCALE_FACTOR -> scale of the HRF used to generate the augmented data
-- NOISE_MODEL -> glm solve method used during data preprocessing
-- alpha_spatial_sb -> the value of alpha_spatial desired for plotting the metrics using spatial basis functions
-- alpha_spatial_nosb -> the value of alpha_spatial desired for plotting the metrics using no spatial basis functions
+- ROOT_DIR: path to your bids dataset
+- BLOB_SIGMA: the standard deviation of the Gaussian blob of activation (mm)
+- TASK: which of the tasks in the BIDS dataset was augmented 
+- SCALE_FACTOR: the amplitude of the maximum change in 850nm OD in channel space
+- GLM_METHOD: which solving method was used in preprocessing of augmented data - ols or ar_irls
+- alpha_spatial_sb: the value of alpha_spatial desired for plotting the metrics using spatial basis functions
+- alpha_spatial_nosb: the value of alpha_spatial desired for plotting the metrics using no spatial basis functions
 
 Output: 
 - Figure saved showing all the metrics across the range of alpha_meas, sigma_brain and sigma_scalp provided
@@ -32,8 +33,9 @@ plt.rcParams['font.size'] = 80
 
 ROOT_DIR = os.path.join('/projectnb', 'nphfnirs', 's', 'datasets', 'BSMW_Laura_Miray_2025', 'BS_bids')
 BLOB_SIGMA = 15
+TASK = 'RS'
 SCALE_FACTOR = 0.02
-NOISE_MODEL = 'ols'  # add if consistent with other figures
+GLM_METHOD = 'ols'  # add if consistent with other figures
 
 alpha_spatial_sb = 1e-2
 alpha_spatial_no_sb = 1e-3
@@ -44,7 +46,7 @@ SAVE_PLOT = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'figures')
 
 os.makedirs(SAVE_PLOT, exist_ok=True)
 
-with open(os.path.join(SAVE_DIR, f'COMPILED_METRIC_RESULTS_blob-{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_single_wl_{NOISE_MODEL}.pkl'), 'rb') as f:
+with open(os.path.join(SAVE_DIR, f'COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_single_wl_{GLM_METHOD}.pkl'), 'rb') as f:
     RESULTS = pickle.load(f)
 
 sigma_brain_list = RESULTS['FWHM'].coords['sigma_brain'].values
@@ -148,7 +150,7 @@ fig.legend(handles, labels,
 #% SAVE FIGURE
 plt.tight_layout() 
 plt.savefig(
-    os.path.join(SAVE_PLOT, f'FIG5_{BLOB_SIGMA}mm_assb-{alpha_spatial_sb}_asnosb-{alpha_spatial_no_sb}_metrics_augRS_single_wl_{NOISE_MODEL}.png'),
+    os.path.join(SAVE_PLOT, f'FIG5_{BLOB_SIGMA}mm_assb-{alpha_spatial_sb}_asnosb-{alpha_spatial_no_sb}_metrics_augRS_single_wl_{GLM_METHOD}.png'),
     dpi=300
 )
 plt.show()

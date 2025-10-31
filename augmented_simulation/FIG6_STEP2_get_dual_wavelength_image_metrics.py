@@ -1,9 +1,29 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-be explicit about assumptions
-- include the script that was used for vertex selection
-- be clear what the HRF parameters are and the default values
+Use this script to generate the metrics used downstream to generate the Figure 6 of 
+"Surface-Based Image Reconstruction Optimization for High-Density Functional Near Infrared Spectroscopy"
+
+For a given set of image recon parameters
+- get the metrics on the subject average at each vertex
+- specify the root directory, size the of the blob, scale of the HRF, list of seed vertices
+
+Steps for user:
+configure the following parameters:
+    - ROOT_DIR: should point to a BIDs data folder
+    - HEAD_MODEL: which atlas to use - options in cedalion are Colin27 and ICBM152
+    - GLM_METHOD: which solving method was used in preprocessing of augmented data - ols or ar_irls
+    - TASK: which of the tasks in the BIDS dataset was augmented 
+    - BLOB_SIGMA: the standard deviation of the Gaussian blob of activation (mm) * MUST HAVE UNITS *
+    - SCALE_FACTOR: the amplitude of the maximum change in 850nm OD in channel space
+    - VERTEX_LIST: list of seed vertices to be used 
+    - exclude_subj: any subjects IDs within the BIDs dataset to be excluded
+    
+choose the image recon parameters to test 
+- alpha_meas_list: select range of alpha measurement
+- alpha_spatial_list: select range of alpha spatial 
+- sigma_brain_list: select range of sigma brain 
+- sigma_scalp_list: select range of sigma scalp 
 
 @author: lcarlton
 """
@@ -30,7 +50,7 @@ import get_image_metrics as gim
 warnings.filterwarnings('ignore')
 
 #%% SETUP CONFIGS
-ROOT_DIR = "/projectnb/nphfnirs/s/datasets/BSMW_Laura_Miray_2025/BS_bids/"
+ROOT_DIR = os.path.join('/projectnb', 'nphfnirs', 's', 'datasets', 'BSMW_Laura_Miray_2025', 'BS_bids')
 HEAD_MODEL = 'ICBM152'
 GLM_METHOD = 'ols'
 TASK = 'RS'
@@ -40,14 +60,13 @@ VERTEX_LIST = [10089, 10453, 14673, 11323, 13685, 11702, 8337]
 exclude_subj = ['sub-577']
 
 # IMAGE RECON PARAMS TO TEST 
-alpha_meas_list = [1e-4, 1, 1e4] #[10 ** i for i in range(-6, 6)]
+alpha_meas_list = [1e-4, 1, 1e4] 
 alpha_spatial_list = [1e-2, 1e-3] 
 sigma_brain_list = [0, 1]*units.mm 
 sigma_scalp_list = [0, 5]*units.mm
 
 #%% SETUP DOWNSTREAM CONFIGS
-CMEAS_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'augmented_data')
-SAVE_DIR = os.path.join(CMEAS_DIR, 'batch_results')
+SAVE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'augmented_data')
 PROBE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'fw', HEAD_MODEL)
 
 os.makedirs(SAVE_DIR, exist_ok=True)
@@ -60,10 +79,6 @@ dirs = os.listdir(ROOT_DIR)
 subject_list = [d for d in dirs if 'sub' in d and d not in exclude_subj]
 
 #%% LOAD DATA
-subj_temp =  f'{subject_list[0]}/nirs/{subject_list[0]}_task-{TASK}_run-01_nirs.snirf'
-file_name = os.path.join(ROOT_DIR, subj_temp)
-rec = io.read_snirf(file_name)[0]
-
 head, parcel_dir = irf.load_head_model(with_parcels=False)
 Adot = load_Adot(os.path.join(PROBE_DIR, 'Adot.nc'))
 
@@ -76,11 +91,11 @@ nV_brain = Adot.is_brain.sum().values
 nV_scalp = (~Adot.is_brain).sum().values
 nV = len(Adot.vertex)
 
-ec = nirs.get_extinction_coefficients("prahl", amp.wavelength)
+ec = nirs.get_extinction_coefficients("prahl", Adot.wavelength)
 einv = xrutils.pinv(ec)
 
 #%% GET THE IMAGE METRICS 
-with open(SAVE_DIR + f"C_meas_subj_{BLOB_SIGMA.magnitude}mm_scale-{SCALE_FACTOR}_{GLM_METHOD}.pkl", 'rb') as f:
+with open(os.path.join(SAVE_DIR, f"C_meas_subj_task-{TASK}_blob-{BLOB_SIGMA.magnitude}mm_scale-{SCALE_FACTOR}_{GLM_METHOD}.pkl"), 'rb') as f:
     C_meas_list = pickle.load(f)
     
 #%% GET THE METRICS FOR ALL VERTICES
@@ -125,16 +140,30 @@ M = sbf.get_sensitivity_mask(Adot, mask_threshold, wl_idx)
 for sigma_brain in sigma_brain_list: 
      
     if sigma_brain > 0:
-         print(f'sigma brain = {sigma_brain.magnitude}')
-         brain_downsampled = sbf.downsample_mesh(head.brain.vertices, M[M.is_brain], sigma_brain)
-         G_brain = sbf.get_kernel_matrix(brain_downsampled, head.brain.vertices, sigma_brain)
+        print(f'\tsigma brain = {sigma_brain.magnitude}')
+        G_brain_path = os.path.join(PROBE_DIR, f'/G_matrix_sigmabrain-{sigma_brain}.pkl')
+        if os.path.exists(G_brain_path):
+            with open(G_brain_path, 'rb') as f:
+                G_brain = pickle.load(f)
+        else:
+            brain_downsampled = sbf.downsample_mesh(head.brain.vertices, M[M.is_brain], sigma_brain*units.mm)
+            G_brain = sbf.get_kernel_matrix(brain_downsampled, head.brain.vertices, sigma_brain*units.mm)
+            with open(G_brain_path, 'wb') as f:
+                    pickle.dump(G_brain, f)
 
     for sigma_scalp in sigma_scalp_list:
         
         if sigma_scalp > 0 and sigma_brain > 0:
-            print(f'sigma scalp = {sigma_scalp.magnitude}')
-            scalp_downsampled = sbf.downsample_mesh(head.scalp.vertices, M[~M.is_brain], sigma_scalp)
-            G_scalp = sbf.get_kernel_matrix(scalp_downsampled, head.scalp.vertices, sigma_scalp)
+            print(f'\tsigma scalp = {sigma_scalp.magnitude}')
+            G_scalp_path = os.path.join(PROBE_DIR, f'/G_matrix_sigmascalp-{sigma_scalp}.pkl')
+            if os.path.exists(G_scalp_path):
+                with open(G_scalp_path, 'rb') as f:
+                    G_scalp = pickle.load(f)
+            else:
+                scalp_downsampled = sbf.downsample_mesh(head.scalp.vertices, M[~M.is_brain], sigma_scalp*units.mm)
+                G_scalp = sbf.get_kernel_matrix(scalp_downsampled, head.scalp.vertices, sigma_scalp*units.mm)
+                with open(G_scalp_path, 'wb') as f:
+                        pickle.dump(G_scalp, f)
 
             G = {'G_brain': G_brain,
                  'G_scalp': G_scalp}
@@ -410,5 +439,5 @@ RESULTS = {
            'contrast_ratio_HbO_indirect': contrast_ratio_HbO_indirect
     }
 
-with open(SAVE_DIR + f'COMPILED_METRIC_RESULTS_{BLOB_SIGMA.magnitude}mm_scale-{SCALE_FACTOR}_{GLM_METHOD}_dual_wl.pkl', 'wb') as f:
+with open(os.path.join(SAVE_DIR, f'COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA.magnitude}mm_scale-{SCALE_FACTOR}_{GLM_METHOD}_dual_wl.pkl', 'wb') as f:
     pickle.dump(RESULTS, f)
