@@ -1,7 +1,22 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Thu Apr 24 11:19:13 2025
+Use this script to generate the images that are included in Figure 6 of 
+"Surface-Based Image Reconstruction Optimization for High-Density Functional Near Infrared Spectroscopy"
+
+Configurables:
+- ROOT_DIR -> path to your bids dataset
+- BLOB_SIGMA -> size of the Gaussian blob used to generate the augmented data
+- SCALE_FACTOR -> scale of the HRF used to generate the augmented data
+- NOISE_MODEL -> glm solve method used during data preprocessing
+- alpha_spatial_sb -> the value of alpha_spatial desired for plotting the metrics using spatial basis functions
+- alpha_spatial_nosb -> the value of alpha_spatial desired for plotting the metrics using no spatial basis functions
+- sigma_brain -> value of sigma brain to use for plotting 
+- sigma_scalp -> value of sigma scalp to use for plottin 
+
+Output: 
+- Figure saved showing all the metrics for both the direct and indirect methods and with and without spatial bses methods across the range of alpha_meas provided
+
 @author: lcarlton
 """
 
@@ -15,24 +30,28 @@ import seaborn as sns
 
 plt.rcParams['font.size'] = 80
 
-#%% PATHS
-ROOT_DIR = "/projectnb/nphfnirs/s/datasets/BSMW_Laura_Miray_2025/BS_bids/"
-SAVE_DIR = f"{ROOT_DIR}/derivatives/cedalion/augmented_data/"
-SAVE_PLOT = f"{ROOT_DIR}/derivatives/cedalion/figures/"
-os.makedirs(SAVE_PLOT, exist_ok=True)
+#%% CONFIGURABLES
+ROOT_DIR = os.path.join('/projectnb', 'nphfnirs', 's', 'datasets', 'BSMW_Laura_Miray_2025', 'BS_bids')
 
-#%% LOAD DATA
 BLOB_SIGMA = 15
 SCALE_FACTOR = 0.02
+NOISE_MDOEL = 'ols'
 
-with open(SAVE_DIR + f'COMPILED_METRIC_RESULTS_blob-{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_dual_wl.pkl', 'rb') as f:
+alpha_spatial_sb = 1e-2
+alpha_spatial_nosb = 1e-3
+sigma_brain = 1
+sigma_scalp = 5
+
+#%% LOAD DATA
+SAVE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'augmented_data')
+SAVE_PLOT = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'figures')
+
+os.makedirs(SAVE_PLOT, exist_ok=True)
+
+with open(os.path.join(SAVE_DIR, f'COMPILED_METRIC_RESULTS_blob-{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_dual_wl_{NOISE_MODEL}.pkl'), 'rb') as f:
     RESULTS = pickle.load(f)
 
-#%% CONSTANTS
-alpha_spatial_sb = 1e-2
-alpha_spatial_no_sb = 1e-3
-sigma_brain, sigma_scalp = 1, 5
-alpha_meas_list = [10**i for i in range(-1, 3)]
+alpha_meas_list = RESULTS['FWHM_HbO_direct'].alpha_meas.values
 VERTEX_LIST = RESULTS['FWHM_HbO_direct'].vertex.values
 
 #%% HELPER FUNCTIONS
@@ -52,7 +71,7 @@ def plot_metric(ax, metric_name, y_label, colors):
     conditions = [
         dict(sigma_brain=sigma_brain, sigma_scalp=sigma_scalp, alpha_spatial=alpha_spatial_sb,
              color=colors[2], label=f'$\\sigma_{{brain}}$={sigma_brain} mm; $\\sigma_{{scalp}}$={sigma_scalp} mm'),
-        dict(sigma_brain=0, sigma_scalp=0, alpha_spatial=alpha_spatial_no_sb,
+        dict(sigma_brain=0, sigma_scalp=0, alpha_spatial=alpha_spatial_nosb,
              color=colors[0], label='No Spatial Basis')
     ]
 
@@ -118,7 +137,7 @@ handles, labels = axes[0].get_legend_handles_labels()
 legend_ax.legend(handles, labels, loc='center', ncol=1)
 
 plt.tight_layout()
-plt.savefig(SAVE_PLOT + f'FIG6_augRS_dual_wl_assb-{alpha_spatial_sb}_asnosb-{alpha_spatial_no_sb}.png', dpi=200)
+plt.savefig(os.path.join(SAVE_PLOT, f'FIG6_augRS_dual_wl_assb-{alpha_spatial_sb}_asnosb-{alpha_spatial_nosb}_{NOISE_MODEL}.png'), dpi=300)
 plt.show()
 
 # %%

@@ -1,7 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Thu Apr 24 11:19:13 2025
+Use this script to generate the images that are included in Figure 5 of 
+"Surface-Based Image Reconstruction Optimization for High-Density Functional Near Infrared Spectroscopy"
+
+Configurables:
+- ROOT_DIR -> path to your bids dataset
+- BLOB_SIGMA -> size of the Gaussian blob used to generate the augmented data
+- SCALE_FACTOR -> scale of the HRF used to generate the augmented data
+- NOISE_MODEL -> glm solve method used during data preprocessing
+- alpha_spatial_sb -> the value of alpha_spatial desired for plotting the metrics using spatial basis functions
+- alpha_spatial_nosb -> the value of alpha_spatial desired for plotting the metrics using no spatial basis functions
+
+Output: 
+- Figure saved showing all the metrics across the range of alpha_meas, sigma_brain and sigma_scalp provided
+
 @author: lcarlton
 """
 
@@ -15,28 +28,29 @@ import seaborn as sns
 
 plt.rcParams['font.size'] = 80
 
-#%% PATHS
-ROOT_DIR = "/projectnb/nphfnirs/s/datasets/BSMW_Laura_Miray_2025/BS_bids/"
-SAVE_DIR = f"{ROOT_DIR}/derivatives/cedalion/augmented_data/"
-SAVE_PLOT = f"{ROOT_DIR}/derivatives/cedalion/figures/"
-os.makedirs(SAVE_PLOT, exist_ok=True)
+#%% SET UP CONFIGURABLES
 
-#%% LOAD DATA
+ROOT_DIR = os.path.join('/projectnb', 'nphfnirs', 's', 'datasets', 'BSMW_Laura_Miray_2025', 'BS_bids')
 BLOB_SIGMA = 15
 SCALE_FACTOR = 0.02
 NOISE_MODEL = 'ols'  # add if consistent with other figures
 
-with open(SAVE_DIR + f'COMPILED_METRIC_RESULTS_blob-{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_single_wl.pkl', 'rb') as f:
-    RESULTS = pickle.load(f)
-
-#%% CONSTANTS
 alpha_spatial_sb = 1e-2
 alpha_spatial_no_sb = 1e-3
+
+#%% LOAD DATA
+SAVE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'augmented_data')
+SAVE_PLOT = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'figures')
+
+os.makedirs(SAVE_PLOT, exist_ok=True)
+
+with open(os.path.join(SAVE_DIR, f'COMPILED_METRIC_RESULTS_blob-{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_single_wl_{NOISE_MODEL}.pkl'), 'rb') as f:
+    RESULTS = pickle.load(f)
+
 sigma_brain_list = RESULTS['FWHM'].coords['sigma_brain'].values
 sigma_scalp_list = RESULTS['FWHM'].coords['sigma_scalp'].values
 alpha_meas_list = RESULTS['FWHM'].coords['alpha_meas'].values
 VERTEX_LIST = RESULTS['FWHM'].vertex.values
-
 
 #%% HELPER FUNCTIONS
 def mean_se(data):
@@ -76,7 +90,6 @@ def plot_metric(ax, metric_name, y_label, colors, ls_list):
     ax.set_xscale('log')
     ax.grid(True)
 
-
 #%% PLOT SETTINGS
 fig = plt.figure(figsize=[60, 30]) 
 gs = gridspec.GridSpec(2, 3, wspace=0.25, hspace=0.3)  # All rows have equal height
@@ -97,8 +110,6 @@ metrics = [
 ]
 
 axes = [fig.add_subplot(gs[i // 3, i % 3]) for i in range(len(metrics))]
-# legend_ax = fig.add_subplot(gs[1, 3])
-# legend_ax.axis('off')
 
 #% PLOT ALL METRICS
 for (metric_name, y_label), ax in zip(metrics, axes):
@@ -107,8 +118,6 @@ for (metric_name, y_label), ax in zip(metrics, axes):
 # Apply log y-scale to selected plots
 axes[1].set_yscale('log')  # CNR
 axes[4].set_yscale('log')  # Crosstalk brain→scalp
-# axes[2].set_yscale('log')  # Contrast ratio
-# axes[5].set_yscale('log')  # perc predicted brain
 
 #% ADD SECOND LEGEND (brain sigmas)
 for ii, sigma_brain in enumerate(sigma_brain_list):
@@ -134,13 +143,12 @@ fig.legend(handles, labels,
            ncol=3,
            fontsize=60,
            frameon=False,
-           bbox_to_anchor=(0.5, -0.1))  # push legend fully below plots
-
+           bbox_to_anchor=(0.5, -0.1))  
 
 #% SAVE FIGURE
 plt.tight_layout() 
 plt.savefig(
-    SAVE_PLOT + f'FIG5_{BLOB_SIGMA}mm_assb-{alpha_spatial_sb}_asnosb-{alpha_spatial_no_sb}_metrics_augRS_single_wl_{NOISE_MODEL}.png',
+    os.path.join(SAVE_PLOT, f'FIG5_{BLOB_SIGMA}mm_assb-{alpha_spatial_sb}_asnosb-{alpha_spatial_no_sb}_metrics_augRS_single_wl_{NOISE_MODEL}.png'),
     dpi=300
 )
 plt.show()
