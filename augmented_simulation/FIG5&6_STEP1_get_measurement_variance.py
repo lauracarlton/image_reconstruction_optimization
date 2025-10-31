@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
+Use this script to generate C_meas that is used downstream to get image metrics used in 
+"Surface-Based Image Reconstruction Optimization for High-Density Functional Near Infrared Spectroscopy"
+
 In this script: 
 - load in a dataset
 - for each run of each subject:
@@ -17,6 +20,23 @@ In this script:
         - 3rd order drift correction 
         - physiological regression using mean of the 19 mm channels
 - save the covariance matrix output 
+
+configure the following parameters:
+    - ROOT_DIR: should point to a BIDs data folder
+    - HEAD_MODEL: which atlas to use - options in cedalion are Colin27 and ICBM152
+    - GLM_METHOD: which solving method was used in preprocessing of augmented data - ols or ar_irls
+    - TASK: which of the tasks in the BIDS dataset was augmented 
+    - BLOB_SIGMA: the standard deviation of the Gaussian blob of activation (mm) * MUST HAVE UNITS *
+    - SCALE_FACTOR: the amplitude of the maximum change in 850nm OD in channel space
+    - VERTEX_LIST: list of seed vertices to be used 
+    - exclude_subj: any subjects IDs within the BIDs dataset to be excluded
+    - TRANGE_HRF: temporal window used to define the HRF
+    - STIM_DUR: length of the boxcar function that is convolved with the HRF 
+    - T_WIN: window over which to average the peak of the HRF
+    - PARAMS_BASIS: parameters used for tau and sigma to define the canonical HRF using a modified gamma function for both HbO and HbR
+    - SNR_THRESH: threshold for defining channels with bad SNR
+    - DRANGE: threshold for defining low amplitude and saturated channels
+    
 
 @author: lcarlton
 """
@@ -36,6 +56,7 @@ from cedalion import io, nirs, units
 import cedalion.sim.synthetic_hrf as synthetic_hrf
 import cedalion.sigproc.motion_correct as motion 
 from cedalion.sigproc.frequency import freq_filter
+from cedalion.io.forward_model import load_Adot
 
 sys.path.append('/projectnb/nphfnirs/s/users/lcarlton/ANALYSIS_CODE/imaging_paper_figure_code/modules/')
 import image_recon_func as irf
@@ -45,16 +66,9 @@ warnings.filterwarnings('ignore')
 
 #%% CONFIG 
 # DATA STORAGE PARAMS
-ROOT_DIR = "/projectnb/nphfnirs/s/datasets/BSMW_Laura_Miray_2025/BS_bids/"
-SAVE_DIR = ROOT_DIR + '/derivatives/cedalion/augmented_data/'
-os.makedirs(SAVE_DIR, exist_ok=True)
-
-PROBE_PATH = ROOT_DIR + '/derivatives/cedalion/'
-
-dirs = os.listdir(ROOT_DIR)
+ROOT_DIR = os.path.join('/projectnb', 'nphfnirs', 's', 'datasets', 'BSMW_Laura_Miray_2025', 'BS_bids')
 exclude_subj = ['sub-577']
-SUBJECT_LIST = [d for d in dirs if 'sub' in d and d not in exclude_subj]
-TASK = 'RS'
+TASK = "RS"
 
 # HEAD PARAMS
 HEAD_MODEL = 'ICBM152'
@@ -71,19 +85,28 @@ PARAMS_BASIS  = [0.1000, 3.0000, 1.8000, 3.0000] # Parameters for tau and sigma 
 
 
 # PREPROCESSING PARAMS
-NOISE_MODEL = 'ols' # can select ols for ordinary least squares or ar_irls for autoregressive model
+GLM_METHOD = 'ols' # can select ols for ordinary least squares or ar_irls for autoregressive model
 # channel flagging params
 D_RANGE = [1e-3, 0.84] # mean signal amplitude min and max
 SNR_THRESH = 5 # signal to noise ratio threshold
 
+#%% SETUP DOWNSTREAM CONFIGURABLES
+SAVE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'augmented_data')
+os.makedirs(SAVE_DIR, exist_ok=True)
+
+PROBE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'fw', HEAD_MODEL)
+
+dirs = os.listdir(ROOT_DIR)
+SUBJECT_LIST = [d for d in dirs if 'sub' in d and d not in exclude_subj]
+
 cmap = plt.cm.get_cmap("jet", 256)
 
-if NOISE_MODEL == 'ols':
+if GLM_METHOD == 'ols':
     DO_TDDR = True
     DO_DRIFT = True
     DO_DRIFT_LEGENDRE = False
     DRIFT_ORDER = 3
-elif NOISE_MODEL == 'ar_irls':
+elif GLM_METHOD == 'ar_irls':
     DO_TDDR = False
     DO_DRIFT = False
     DO_DRIFT_LEGENDRE = True
@@ -98,7 +121,7 @@ cfg_GLM = {
     'drift_order' : DRIFT_ORDER,
     'distance_threshold' : 20*units.mm, # for ssr
     'short_channel_method' : 'mean',
-    'noise_model' : NOISE_MODEL,
+    'noise_model' : GLM_METHOD,
     't_delta' : 1*units.s ,   # for seq of Gauss basis func - the temporal spacing between consecutive gaussians
     't_std' : 1*units.s ,  
     't_pre' : 2*units.s,
@@ -120,14 +143,14 @@ rec = io.read_snirf(file_name)[0]
 
 # load in the head model
 head, parcel_dir = irf.load_head_model(with_parcels=False)
-Adot, meas_list, geo3d, amp = irf.load_probe(snirf_name = 'reference_probe.snirf', probe_path=PROBE_PATH)
+Adot = load_Adot(os.path.join(PROBE_DIR, 'Adot.nc'))
 channel = Adot.channel
 
-E = nirs.get_extinction_coefficients("prahl", amp.wavelength)
+E = nirs.get_extinction_coefficients("prahl", Adot.wavelength)
 dpf = xr.DataArray(
                     [1, 1],
                     dims="wavelength",
-                    coords={"wavelength": rec["amp"].wavelength},
+                    coords={"wavelength": Adot.wavelength},
                     )
 
 # define the HRF
@@ -204,7 +227,7 @@ for ss, subject in enumerate(SUBJECT_LIST):
         rec['od_wHRF'].time.attrs['units'] = units.s
         
         # do TDDR and lowpass filter if the noise model is OLS
-        if cfg_GLM['noise_model'] == 'ols':
+        if cfg_GLM['GLM_METHOD'] == 'ols':
             rec['od_wHRF'] = motion.tddr(rec['od_wHRF'])
             rec['od_wHRF'] = rec['od_wHRF'].where( ~rec['od_wHRF'].isnull(), 1e-18 ) 
 
@@ -240,7 +263,7 @@ for ss, subject in enumerate(SUBJECT_LIST):
         
 # save the C_meas as the within subject variance for all subjects  
 print('Saving the data')
-with open(SAVE_DIR + f"C_meas_subj_{BLOB_SIGMA.magnitude}mm_scale-{SCALE_FACTOR}_{cfg_GLM['noise_model']}.pkl", 'wb') as f:
+with open(os.path.join(SAVE_DIR, f"C_meas_subj_task-{TASK}_blob-{BLOB_SIGMA.magnitude}mm_scale-{SCALE_FACTOR}_{cfg_GLM['GLM_METHOD']}.pkl"), 'wb') as f:
     pickle.dump(C_meas_list, f)
 
 print('Complete.')
