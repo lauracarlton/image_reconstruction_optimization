@@ -1,0 +1,15 @@
+==========================================================
+Start date : Mon Oct 27 13:49:43 EDT 2025
+Job name : BS_HRF_estimate
+Job ID : 1066624
+==========================================================
+subject : sub-613
+==========================================================
+RUNNING PREPROCESSING
+Processing  1 of 3 files : sub-613_task-BS_run-01_nirs
+Processing  2 of 3 files : sub-613_task-BS_run-02_nirs
+Processing  3 of 3 files : sub-613_task-BS_run-03_nirs
+Saving data
+HRF estimation complete
+Saved individual HRF to /projectnb/nphfnirs/s/datasets/BSMW_Laura_Miray_2025/BS_bids/derivatives/processed_data/sub-613/sub-613_conc_o_glm_residual_ar_irls.pkl
+Job Complete.
