@@ -42,9 +42,9 @@ Author: Laura Carlton
 import os
 import subprocess
 
+# --------------------- CONFIG ---------------------
 ROOT_DIR = os.path.join('/projectnb', 'nphfnirs', 's', 'datasets', 'BSMW_Laura_Miray_2025', 'BS_bids')
 EXCLUDED = ['sub-538', 'sub-549', 'sub-547']
-# Absolute path to the shell script that submits a single subject job.
 SHELL_SCRIPT = os.path.join(
     "/projectnb",
     "nphfnirs",
@@ -58,6 +58,7 @@ SHELL_SCRIPT = os.path.join(
     "batch_STEP1_preprocess",
     "shell_get_HRF_per_subject.sh",
 )
+# --------------------------------------------------
 
 dirs = [d for d in os.listdir(ROOT_DIR) if os.path.isdir(os.path.join(ROOT_DIR, d))]
 subject_list = [d for d in dirs if 'sub' in d and d not in EXCLUDED]

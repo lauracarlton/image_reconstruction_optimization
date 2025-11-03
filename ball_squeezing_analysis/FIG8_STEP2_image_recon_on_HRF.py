@@ -40,6 +40,8 @@ Configurables (defaults shown)
         - Noise-model label used for solving the GLM when reading per-subject STEP1 outputs.
 - REC_STR (str): 'conc_o'
         - Record string pointing to concentration data used by STEP1.
+- TASK (str): 'BS'
+    - Task identifier used to build file IDs.
 - CMEAS_FLAG (bool): True
     - Whether to use measured C_meas when performing image reconstruction.
 - MAG_TS_FLAG (str): 'MAG'  # expected values: 'MAG' or 'TS'
@@ -89,6 +91,7 @@ warnings.filterwarnings('ignore')
 # %% set up config parameters
 ROOT_DIR = os.path.join('/projectnb', 'nphfnirs', 's', 'datasets', 'BSMW_Laura_Miray_2025', 'BS_bids')
 NOISE_MODEL = 'ar_irls'
+TASK = 'BS'
 REC_STR = 'conc_o'
 CMEAS_FLAG = True
 MAG_TS_FLAG = 'MAG' # expected values: 'MAG' or 'TS' (case-sensitive in downstream checks)
@@ -183,7 +186,7 @@ for cfg in cfg_list:
     else:
         direct_name = 'indirect'
     
-    if C_meas_flag:
+    if CMEAS_FLAG:
         Cmeas_name = 'Cmeas'
     else:
         Cmeas_name = 'noCmeas'
@@ -205,7 +208,7 @@ for cfg in cfg_list:
         SAVE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'processed_data', 'image_space', subject)
         os.makedirs(SAVE_DIR, exist_ok=True)
 
-        recordings = io.read_snirf(os.path.join(ROOT_DIR, subject, 'nirs', f'{subject}_task-BS_run-01_nirs.snirf'))
+        recordings = io.read_snirf(os.path.join(ROOT_DIR, subject, 'nirs', f'{subject}_task-{TASK}_run-01_nirs.snirf'))
         rec = recordings[0]
         geo3d = rec.geo3d
         amp = rec['amp']
@@ -302,10 +305,10 @@ for cfg in cfg_list:
         print(f'\t\tSaving to {SAVE_DIR}')
 
         if SB:
-            filepath = os.path.join(SAVE_DIR, f'{subject}_image_hrf_{fname_flag}_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}.pkl.gz')
+            filepath = os.path.join(SAVE_DIR, f'{subject}_task-{TASK}_image_hrf_{fname_flag}_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}.pkl.gz')
         else:
-            filepath = os.path.join(SAVE_DIR, f'{subject}_image_hrf_{fname_flag}_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}.pkl.gz')
-        
+            filepath = os.path.join(SAVE_DIR, f'{subject}_task-{TASK}_image_hrf_{fname_flag}_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}.pkl.gz')
+
         file = gzip.GzipFile(filepath, 'wb')
         file.write(pickle.dumps(results))
         file.close()     

@@ -2,22 +2,36 @@
 """
 estimate_HRF_per_subj.py
 
-Estimate per-subject HRFs for the ball-squeezing task.
+Preprocessing and hemodynamic response function (HRF) estimation pipeline for the
+ball-squeezing fNIRS dataset as done in "Surface-Based Image Reconstruction Optimization for High-Density Functional Near Infrared Spectroscopy".
+This script is the per-subject worker called by the FIG8 HRF estimation
+batch submitter.
 
-This script performs the per-subject preprocessing and GLM-based HRF
-estimation used by the ball-squeezing analysis. It is intentionally
-conservative: the top of the file lists the primary configurables (ROOT_DIR,
-which stages to run, and the noise model). The script will either run
-preprocessing over the SNIRF runs for a single subject, or load previously
-saved preprocessed data, then run the HRF estimation and write a gzipped
-pickle with the results.
+This script performs the following high-level steps for a given subject and run:
+
+- Load raw SNIRF recordings and associated *_events.tsv stimulus files.
+- Identify bad channels based on amplitude, SNR and other heuristics.
+- Convert raw amplitudes to optical density (OD) and concentration.
+- Optional motion correction (TDDR) and optional bandpass filtering.
+- Fit a GLM to estimate the HRF (supports 'ols' and 'ar_irls' noise models).
+- Save per-subject preprocessed results and HRF estimates as gzipped pickles
+  under <ROOT_DIR>/derivatives/processed_data/<sub>.
 
 Usage
 -----
-Run from the command line with a single subject id (BIDS-style):
+- Edit configuration values in the "CONFIGURE" section below (ROOT_DIR,
+  NOISE_MODEL, RUN_PREPROCESS, RUN_HRF_ESTIMATION, etc.).
+- Run from the command line with a single subject id (BIDS-style):
 
         python estimate_HRF_per_subj.py sub-618
 
+Inputs
+------
+- A BIDS-like folder structure under ROOT_DIR containing subject folders with
+  a `nirs` subfolder and files like
+  `<sub>_task-<TASK>_run-0X_nirs.snirf` plus matching `_events.tsv` files.
+
+  
 Configurables (defaults shown)
 -----------------------------
 - ROOT_DIR (str): '/projectnb/nphfnirs/s/datasets/BSMW_Laura_Miray_2025/BS_bids'
@@ -64,10 +78,7 @@ Outputs
   - 'hrf_per_subj' (xarray): estimated HRF per channel/time/chromophore/trial_type
   - 'hrf_mse_per_subj' (xarray): MSE of HRF estimates
   - 'bad_indices' (np.ndarray): indices of bad channels
-Outputs
--------
-- Per-subject gzipped pickle saved to
-    <ROOT_DIR>/derivatives/processed_data/<subj>/<subj>_conc_o_hrf_estimates_<NOISE_MODEL>.pkl.gz
+  - saved to <ROOT_DIR>/derivatives/processed_data/<subj>/<subj>_conc_o_hrf_estimates_<NOISE_MODEL>.pkl.gz
 - Optional GLM residual saved to the subject save directory when
     SAVE_RESIDUAL is True.
 
@@ -82,8 +93,6 @@ Author: Laura Carlton
 
 # %% Imports
 ##############################################################################
-#%matplotlib widget
-
 import os
 import gzip
 import pickle
@@ -267,12 +276,12 @@ if RUN_PREPROCESS:
                 'geo3d': geo3d
                 }
 
-    with gzip.open( os.path.join(SAVE_DIR, f'{subject}_preprocessed_results_{NOISE_MODEL}.pkl'), 'wb') as f:
+    with gzip.open( os.path.join(SAVE_DIR, f'{subject}_task-{TASK}_preprocessed_results_{NOISE_MODEL}.pkl'), 'wb') as f:
         pickle.dump(results, f, protocol=pickle.HIGHEST_PROTOCOL
         )
 else:
     print('LOADING PREPROCESSED DATA')
-    with gzip.open( os.path.join(SAVE_DIR, f'{subject}_preprocessed_results_{NOISE_MODEL}.pkl'), 'rb') as f:
+    with gzip.open( os.path.join(SAVE_DIR, f'{subject}_task-{TASK}_preprocessed_results_{NOISE_MODEL}.pkl'), 'rb') as f:
         results = pickle.load(f)
     
     all_runs = results['runs']
@@ -318,8 +327,7 @@ if RUN_HRF_ESTIMATION:
     print('HRF estimation complete')
 
     # save per subject results concentration and then image recon will take and convert to OD 
-    file_path_pkl = os.path.join(cfg_dataset['root_dir'], 'derivatives', 'processed_data', subject,
-                                    f"{subject}_{REC_STR}_hrf_estimates_{NOISE_MODEL}.pkl.gz")
+    file_path_pkl = os.path.join(SAVE_DIR, f"{subject}_task-{TASK}_{REC_STR}_hrf_estimates_{NOISE_MODEL}.pkl.gz")
 
     # save the individual results to a pickle file for image recon
     file = gzip.GzipFile(file_path_pkl, 'wb')
@@ -334,7 +342,7 @@ if RUN_HRF_ESTIMATION:
     file.close()
 
     if SAVE_RESIDUAL:
-        file_path_pkl = os.path.join(SAVE_DIR, f"{subject}_{REC_STR}_glm_residual_{NOISE_MODEL}.pkl")
+        file_path_pkl = os.path.join(SAVE_DIR, f"{subject}_task-{TASK}_{REC_STR}_glm_residual_{NOISE_MODEL}.pkl")
 
         residual = results.sm.resid
         with open(file_path_pkl, 'wb') as f:

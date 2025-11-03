@@ -26,7 +26,7 @@
 # - The script expects one positional argument: the subject id.
 #
 # Outputs:
-# - Stdout/stderr are redirected to the SGE -o/-e paths defined below.
+# - Stdout/stderr are redirected to the SGE -o/-e paths defined above.
 # - The called Python script will write per-subject pickles under the
 #   project's derivatives/processed_data folder.
 # ---------------------------------------------------------------------------

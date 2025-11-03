@@ -1,86 +1,97 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Thu Feb 20 15:48:36 2025
+image_recon_on_HRF_per_subj.py
 
-@author: lcarlton
+Run image reconstruction for a single subject using previously-estimated
+HRFs. This script is the per-subject worker called by the FIG8 image-recon
+batch submitter. It reads the saved per-subject HRF and MSE pickles produced
+by the HRF estimation step, runs a small set of reconstruction configurations
+(`cfg_list`) and writes per-subject image-space HRF and MSE results as
+gzipped pickles under the dataset's derivatives directory.
+
+Usage
+-----
+- Configure the runtime variables in the CONFIG section below (ROOT_DIR,
+    PROBE_DIR, NOISE_MODEL, flags, regularization configs).
+- Run from the command line with a single subject id (BIDS-style):
+
+        python image_recon_on_HRF_per_subj.py sub-618
+
+Inputs
+------
+- Root dataset folder containing per-subject `nirs` subfolders and STEP1
+    outputs located under `<ROOT_DIR>/derivatives/processed_data/<subject>/`.
+- Forward model `Adot.nc` in the PROBE_DIR used for sensitivity and masking.
+
+Configurables (top of file)
+---------------------------
+- ROOT_DIR (str): '/projectnb/nphfnirs/s/datasets/BSMW_Laura_Miray_2025/BS_bids'
+        - Path to BIDS-like dataset used by STEP1 outputs and subject SNIRF files.
+- NOISE_MODEL (str): 'ar_irls'
+        - Noise-model label used for solving the GLM when reading per-subject STEP1 outputs.
+- REC_STR (str): 'conc_o'
+        - Record string pointing to concentration data used by STEP1.
+- - TASK (str): 'BS'
+    - Task identifier used to build file IDs.
+- CMEAS_FLAG (bool): True
+    - Whether to use measured C_meas when performing image reconstruction.
+- MAG_TS_FLAG (str): 'MAG'  # expected values: 'MAG' or 'TS'
+        - Controls whether to reduce HRF to a single magnitude value (MAG) or
+            keep time series (TS) when reconstructing.
+- T_WIN (list[int]): [5, 8]
+        - Time window (seconds) used for computing magnitude when MAG flag is set.
+- cfg_mse (dict): keys for MSE masking and thresholds (see script for defaults).
+- cfg_list (list[dict]): Regularization configurations evaluated (alpha_meas,
+    alpha_spatial, DIRECT, SB, sigma_brain, sigma_scalp).
+
+Outputs
+-------
+- For each subject and configuration, a gzipped pickle saved to:
+    `<ROOT_DIR>/derivatives/processed_data/image_space/<subject>/` containing:
+    - 'X_hrf' : reconstructed image(s) (xarray)
+    - 'X_mse' : per-image MSE estimates (xarray)
+
+Dependencies
+------------
+Requires the project `cedalion` package and the local helper modules in
+the project's modules directory (image_recon_func, spatial_basis_funs).
+Also requires xarray, numpy and python's gzip/pickle.
+
+
+Author: Laura Carlton
 """
+
 #%%
 import os
+import sys
 import gzip
 import pickle
+import warnings
 
 import xarray as xr
 from cedalion import nirs, units, io
 from cedalion.io.forward_model import load_Adot
 
-# import my own functions from a different directory
-import sys
+# import functions from a different directory
 sys.path.append('/projectnb/nphfnirs/s/users/lcarlton/ANALYSIS_CODE/imaging_paper_figure_code/modules/')
 import image_recon_func as irf
 import spatial_basis_funs as sbf
 
 # Turn off all warnings
-import warnings
 warnings.filterwarnings('ignore')
 
 #%%
 subject = str(sys.argv[1])
 # subject = 'sub-580'
 #%% set up config parameters
-ROOT_DIR = "/projectnb/nphfnirs/s/datasets/BSMW_Laura_Miray_2025/BS_bids/"
-SAVE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'processed_data', 'image_space', subject)
-PROBE_DIR = ROOT_DIR + 'derivatives/cedalion/fw/ICBM152/'
-
-os.makedirs(SAVE_DIR, exist_ok=True)
-
+ROOT_DIR = os.path.join('/', 'projectnb', 'nphfnirs', 's', 'datasets', 'BSMW_Laura_Miray_2025', 'BS_bids')
 NOISE_MODEL = 'ar_irls'
+TASK = 'BS'
 REC_STR = 'conc_o'
-
-C_meas_flag = True
+CMEAS_FLAG = True
 MAG_TS_FLAG = 'mag'
-
 T_WIN = [5, 8]
-head_model = 'ICBM152'
-
-cfg_mse = {
-    'mse_val_for_bad_data' : 1e1 , 
-    'mse_amp_thresh' : 1e-3*units.V,
-    'blockaverage_val' : 0 ,
-     'mse_min_thresh' : 1e-6
-    }
-
-#%% load head model 
-head, PARCEL_DIR = irf.load_head_model('ICBM152', with_parcels=True)
-Adot = load_Adot(os.path.join(PROBE_DIR, 'Adot.nc'))
-
-recordings = io.read_snirf(ROOT_DIR + f'{subject}/nirs/{subject}_task-BS_run-01_nirs.snirf')
-rec = recordings[0]
-geo3d = rec.geo3d
-amp = rec['amp']
-meas_list = rec._measurement_lists['amp']
-
-print("Loading saved data")
-with gzip.open( os.path.join(ROOT_DIR, 'derivatives', 'processed_data', f'{subject}/{subject}_{REC_STR}_hrf_estimates_{NOISE_MODEL}.pkl.gz'), 'rb') as f:
-     all_results = pickle.load(f)
-
-#%% run image recon
-"""
-do the image reconstruction of each subject independently 
-- this is the unweighted subject block average magnitude 
-- then reconstruct their individual MSE
-- then get the weighted average in image space 
-- get the total standard error using between + within subject MSE 
-"""
-
-threshold = -2 # log10 absolute
-wl_idx = 1
-
-M = sbf.get_sensitivity_mask(Adot, threshold, wl_idx)
-
-subj_hrf = all_results['hrf_per_subj']
-subj_mse = all_results['hrf_mse_per_subj']
-bad_channels = all_results['bad_indices']
 
 cfg_list = [            
             {'alpha_meas': 1e4,
@@ -110,15 +121,50 @@ cfg_list = [
             'SB': True,
             'sigma_brain': 1,
             'sigma_scalp': 5},
-
      ]
+
+cfg_mse = {
+    'mse_val_for_bad_data' : 1e1 , 
+    'mse_amp_thresh' : 1e-3*units.V,
+    'blockaverage_val' : 0 ,
+     'mse_min_thresh' : 1e-6
+    }
+
+SAVE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'processed_data', 'image_space', subject)
+PROBE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'fw', 'ICBM152')
+os.makedirs(SAVE_DIR, exist_ok=True)
+
+#%% load head model 
+head, PARCEL_DIR = irf.load_head_model('ICBM152', with_parcels=True)
+Adot = load_Adot(os.path.join(PROBE_DIR, 'Adot.nc'))
+
+recordings = io.read_snirf(os.path.join(ROOT_DIR, f'{subject}/nirs/{subject}_task-{TASK}_run-01_nirs.snirf'))
+rec = recordings[0]
+geo3d = rec.geo3d
+
+print("Loading saved data")
+with gzip.open( os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'processed_data', f'{subject}/{subject}_{REC_STR}_hrf_estimates_{NOISE_MODEL}.pkl.gz'), 'rb') as f:
+     all_results = pickle.load(f)
+
+#%% run image recon
+"""
+do the image reconstruction of each subject independently 
+- this is the unweighted subject block average magnitude 
+- then reconstruct their individual MSE
+- then get the weighted average in image space 
+- get the total standard error using between + within subject MSE 
+"""
+
+subj_hrf = all_results['hrf_per_subj']
+subj_mse = all_results['hrf_mse_per_subj']
+bad_channels = all_results['bad_indices']
 
 dpf = xr.DataArray(
                     [1, 1],
                     dims="wavelength",
-                    coords={"wavelength": amp.wavelength},
+                    coords={"wavelength": Adot.wavelength},
                     )
-E = nirs.get_extinction_coefficients('prahl', amp.wavelength)
+E = nirs.get_extinction_coefficients('prahl', Adot.wavelength)
 
 #%%
 for cfg in cfg_list:
@@ -153,7 +199,7 @@ for cfg in cfg_list:
     else:
         direct_name = 'indirect'
     
-    if C_meas_flag:
+    if CMEAS_FLAG:
         Cmeas_name = 'Cmeas'
     else:
         Cmeas_name = 'noCmeas'
@@ -199,7 +245,7 @@ for cfg in cfg_list:
         C_meas = od_mse_mag.pint.dequantify()
         C_meas = C_meas.stack(measurement=('channel', 'wavelength')).sortby('wavelength')
         
-        X_hrf, W, D, F, G = irf.do_image_recon(od_hrf, head = head, Adot = Adot, C_meas_flag=C_meas_flag, C_meas = C_meas, 
+        X_hrf, W, D, F, G = irf.do_image_recon(od_hrf, head = head, Adot = Adot, C_meas_flag=CMEAS_FLAG, C_meas = C_meas, 
                                                     wavelength = [760,850], BRAIN_ONLY = False, DIRECT=DIRECT, SB = SB, 
                                                     cfg_sbf = cfg_sbf, alpha_spatial = alpha_spatial, alpha_meas = alpha_meas,
                                                     F = F, D = D, G = G)
@@ -250,10 +296,10 @@ for cfg in cfg_list:
     print(f'\t\tSaving to {SAVE_DIR}')
 
     if SB:
-        filepath = os.path.join(SAVE_DIR, f'{subject}_image_hrf_{fname_flag}_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}.pkl.gz')
+        filepath = os.path.join(SAVE_DIR, f'{subject}_task-{TASK}_image_hrf_{fname_flag}_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}.pkl.gz')
     else:
-        filepath = os.path.join(SAVE_DIR, f'{subject}_image_hrf_{fname_flag}_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}.pkl.gz')
-    
+        filepath = os.path.join(SAVE_DIR, f'{subject}_task-{TASK}_image_hrf_{fname_flag}_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}.pkl.gz')
+
     file = gzip.GzipFile(filepath, 'wb')
     file.write(pickle.dumps(results))
     file.close()     

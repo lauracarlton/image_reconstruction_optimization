@@ -1,11 +1,67 @@
 
+"""
+compile_and_group_average.py
+
+Compile per-subject image-space reconstructions and compute the group-level
+weighted average and statistics. This script collects the per-subject
+reconstructions produced by `image_recon_on_HRF_per_subj.py`, optionally
+applies spatial smoothing and sensitivity masking, computes weighted
+averages using within-subject MSEs, and writes a single summary pickle per
+reconstruction configuration.
+
+Usage
+-----
+Run from a machine with access to the dataset root (or on the cluster head)
+after all per-subject image recon jobs have completed:
+
+    python compile_and_group_average.py
+
+Configurables (near top of file)
+--------------------------------
+- ROOT_DIR: dataset root containing BIDS-like subject folders.
+- SAVE_DIR: directory where per-subject image results are stored.
+- PROBE_DIR: forward-model directory used to load Adot and G-matrices.
+- TASK: task name used in per-subject filenames.
+- NOISE_MODEL, fname_flag: filename conventions used to find files.
+- FLAG_DO_SPATIAL_SMOOTHING: whether to perform spatial smoothing.
+- FLAG_USE_ONLY_SENSITIVE: when smoothing, restrict to sensitivity mask.
+- SIGMA_SMOOTHING: spatial smoothing kernel width (if enabled).
+- FNAME_FLAG: filename convention for output files - either 'ts' or 'mag'.
+- EXCLUDED: list of subject IDs to skip (e.g. problematic subjects).
+- TRIAL_TYPES: list of trial types to process.
+
+Outputs
+-------
+Writes a gzipped pickle to <SAVE_DIR> containing a dict with keys such as
+'X_hrf_ts', 'X_mse', 'X_tstat', 'X_std_err' and related group-level
+summaries for each reconstruction configuration.
+
+Dependencies
+------------
+Relies on project helpers `image_recon_func`, `processing_func`, and
+`spatial_basis_funs` (available in the modules/ directory). Also requires
+cedalion's forward-model tools and xarray/numpy for array operations.
+
+Notes
+-----
+This script follows the FIG8-style conventions used by the other
+batch scripts. It expects per-subject pickles to exist in
+`<ROOT_DIR>/derivatives/cedalion/processed_data/image_space/<subj>/` before running.
+Adjust the `cfg_list`, smoothing settings and excluded subject list as
+needed for your analysis.
+
+Author: Laura Carlton
+"""
+
 #%%
 import os 
 import pickle
 import gzip
 import sys
+
 import xarray as xr
 import numpy as np 
+
 from cedalion import units
 from cedalion.io.forward_model import load_Adot
 
@@ -14,42 +70,18 @@ import image_recon_func as irf
 import processing_func as pf
 import spatial_basis_funs as sbf
 
+ROOT_DIR = os.path.join('/', 'projectnb', 'nphfnirs', 's', 'datasets', 'BSMW_Laura_Miray_2025', 'BS_bids')
 FLAG_DO_SPATIAL_SMOOTHING = True
 FLAG_USE_ONLY_SENSITIVE = True
-
-ROOT_DIR = os.path.join('/', 'projectnb', 'nphfnirs', 's', 'datasets', 'BSMW_Laura_Miray_2025', 'BS_bids')
-SAVE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'processed_data', 'image_space')
-PROBE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'fw', 'ICBM152')
-
+TASK = 'BS'
 NOISE_MODEL = 'ar_irls'
-fname_flag = 'ts'
-sigma_smoothing = 30 * units.mm
+FNAME_FLAG = 'ts'
+SIGMA_SMOOTHING = 30 * units.mm
+EXCLUDED = ['sub-538', 'sub-549', 'sub-547']
+TRIAL_TYPES = ['right', 'left']
 
-if FLAG_DO_SPATIAL_SMOOTHING: 
-    head, PARCEL_DIR = irf.load_head_model('ICBM152', with_parcels=True)
-    Adot = load_Adot(os.path.join(PROBE_DIR, 'Adot.nc'))
-    sensitivity_mask = sbf.get_sensitivity_mask(Adot.sel(vertex=Adot.is_brain.values))
-
-    # get MNI coordinates
-    V_ijk = head.brain.mesh.vertices  # shape (N,3)
-    M = head.t_ijk2ras.values  # shape (4,4)
-    V_h = np.c_[V_ijk, np.ones((V_ijk.shape[0], 1))]  # (N,4)
-    V_ras_brain = (V_h @ M.T)[:, :3]
-
-    if FLAG_USE_ONLY_SENSITIVE:
-        V_ras = V_ras_brain[sensitivity_mask, :]
-    else:
-        V_ras = V_ras_brain
-    
-    W = pf.get_spatial_smoothing_kernel(V_ras, sigma_smoothing.magnitude)
-    smoothing_name = f'_smoothing-{sigma_smoothing.magnitude}'
-else:
-    smoothing_name = ''
-
-dirs = os.listdir(ROOT_DIR)
-
-excluded = ['sub-538', 'sub-549', 'sub-547'] 
-subject_list = [d for d in dirs if 'sub' in d and d not in excluded]
+SAVE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'processed_data', 'image_space')
+PROBE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'fw', 'ICBM152')
 
 cfg_list = [            
             {'alpha_meas': 1e4,
@@ -82,7 +114,30 @@ cfg_list = [
 
      ]
 
-trial_types = ['right', 'left']
+
+if FLAG_DO_SPATIAL_SMOOTHING: 
+    head, PARCEL_DIR = irf.load_head_model('ICBM152', with_parcels=True)
+    Adot = load_Adot(os.path.join(PROBE_DIR, 'Adot.nc'))
+    sensitivity_mask = sbf.get_sensitivity_mask(Adot.sel(vertex=Adot.is_brain.values))
+
+    # get MNI coordinates
+    V_ijk = head.brain.mesh.vertices  # shape (N,3)
+    M = head.t_ijk2ras.values  # shape (4,4)
+    V_h = np.c_[V_ijk, np.ones((V_ijk.shape[0], 1))]  # (N,4)
+    V_ras_brain = (V_h @ M.T)[:, :3]
+
+    if FLAG_USE_ONLY_SENSITIVE:
+        V_ras = V_ras_brain[sensitivity_mask, :]
+    else:
+        V_ras = V_ras_brain
+
+    W = pf.get_spatial_smoothing_kernel(V_ras, SIGMA_SMOOTHING.magnitude)
+    smoothing_name = f'_smoothing-{SIGMA_SMOOTHING.magnitude}'
+else:
+    smoothing_name = ''
+
+dirs = os.listdir(ROOT_DIR)
+subject_list = [d for d in dirs if 'sub' in d and d not in EXCLUDED]
 
 #%%
 for cfg in cfg_list[:1]:
@@ -102,7 +157,7 @@ for cfg in cfg_list[:1]:
     all_trial_all_subj_X_hrf_ts = None
     print(f'alpha_meas = {alpha_meas}, alpha_spatial = {alpha_spatial}, SB = {SB}, {direct_name}')
 
-    for trial_type in trial_types:          
+    for trial_type in TRIAL_TYPES:          
         all_subj_X_hrf_ts = []
         all_subj_X_mse = []
         print(f'\ttrial_type - {trial_type}')
@@ -111,10 +166,10 @@ for cfg in cfg_list[:1]:
             # print(f'\t\t{subj}')
             folderpath = os.path.join(SAVE_DIR, subj)
             if SB:
-                filepath = os.path.join(folderpath, f'{subj}_image_hrf_{fname_flag}_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_Cmeas_{NOISE_MODEL}.pkl.gz')
+                filepath = os.path.join(SAVE_DIR, f'{subj}_task-{TASK}_image_hrf_{FNAME_FLAG}_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}.pkl.gz')
             else:
-                filepath = os.path.join(folderpath, f'{subj}_image_hrf_{fname_flag}_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_{direct_name}_Cmeas_{NOISE_MODEL}.pkl.gz')
-            
+                filepath = os.path.join(SAVE_DIR, f'{subj}_task-{TASK}_image_hrf_{FNAME_FLAG}_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}.pkl.gz')
+
             with gzip.open(filepath, 'rb') as f:
                 results = pickle.load(f)
             
@@ -244,10 +299,10 @@ for cfg in cfg_list[:1]:
                }
 
     if SB:
-        filepath = os.path.join(SAVE_DIR, f'image_hrf_{fname_flag}_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_Cmeas_{NOISE_MODEL}{smoothing_name}.pkl.gz')
+        filepath = os.path.join(SAVE_DIR, f'task-{TASK}_image_hrf_{FNAME_FLAG}_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_Cmeas_{NOISE_MODEL}{smoothing_name}.pkl.gz')
     else:
-        filepath = os.path.join(SAVE_DIR, f'image_hrf_{fname_flag}_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_{direct_name}_Cmeas_{NOISE_MODEL}{smoothing_name}.pkl.gz')
-   
+        filepath = os.path.join(SAVE_DIR, f'task-{TASK}_image_hrf_{FNAME_FLAG}_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_{direct_name}_Cmeas_{NOISE_MODEL}{smoothing_name}.pkl.gz')
+
     print(f'Saving to {filepath}')
     file = gzip.GzipFile(filepath, 'wb')
     file.write(pickle.dumps(results))

@@ -29,6 +29,8 @@ Configurables (defaults shown)
 - CMEAS_FLAG (bool): True
     - Whether measurement-based noise (C_meas) was used in recon (used in
       filenames).
+- TASK (str): 'BS'
+    - Task identifier used in file IDs.
 - FNAME_FLAG (str): 'ts'
     - Which time-series/magnitude files to load ('ts' or 'mag').
 - SAVE (bool): True
@@ -81,6 +83,7 @@ plt.rcParams['font.size'] = 50
 #%% CONFIG
 ROOT_DIR = os.path.join('/projectnb', 'nphfnirs', 's', 'datasets', 'BSMW_Laura_Miray_2025', 'BS_bids')
 CMEAS_FLAG = True
+TASK = 'BS'
 FNAME_FLAG = 'ts'
 SAVE = True
 PLOT_MASK = True
@@ -152,9 +155,9 @@ for cc, cfg in enumerate(cfg_list):
     
     # import timeseries
     if SB:
-        filepath = os.path.join(DATA_DIR, f'image_hrf_ts_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}.pkl.gz')
+        filepath = os.path.join(DATA_DIR, f'image_hrf_task-{TASK}_ts_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}.pkl.gz')
     else:
-        filepath = os.path.join(DATA_DIR, f'image_hrf_ts_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}.pkl.gz')
+        filepath = os.path.join(DATA_DIR, f'image_hrf_task-{TASK}_ts_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}.pkl.gz')
     
     
     with gzip.open(filepath, 'rb') as f:
@@ -162,9 +165,9 @@ for cc, cfg in enumerate(cfg_list):
          
     # import image magnitude 
     if SB:
-        filepath = os.path.join(DATA_DIR, f'image_hrf_mag_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}.pkl.gz')
+        filepath = os.path.join(DATA_DIR, f'image_hrf_task-{TASK}_mag_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}.pkl.gz')
     else:
-        filepath = os.path.join(DATA_DIR, f'image_hrf_mag_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}.pkl.gz')
+        filepath = os.path.join(DATA_DIR, f'image_hrf_task-{TASK}_mag_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}.pkl.gz')
     
     
     with gzip.open(filepath, 'rb') as f:
@@ -326,9 +329,9 @@ for cc, cfg in enumerate(cfg_list):
         plt.tight_layout()
     
         if SB:
-            filepath = os.path.join(SAVE_DIR, f'ts_plot_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_{Cmeas_name}_{trial_type.values}_roi-{ROI_selection}_{glm_method}-legdrift.png')
+            filepath = os.path.join(SAVE_DIR, f'task-{TASK}_ts_plot_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_{Cmeas_name}_{trial_type.values}_roi-{ROI_selection}_{glm_method}-legdrift.png')
         else:
-            filepath = os.path.join(SAVE_DIR, f'ts_plot_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_{direct_name}_{Cmeas_name}_{trial_type.values}_roi-{ROI_selection}_{glm_method}-legdrift.png')
+            filepath = os.path.join(SAVE_DIR, f'task-{TASK}_ts_plot_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_{direct_name}_{Cmeas_name}_{trial_type.values}_roi-{ROI_selection}_{glm_method}-legdrift.png')
             
         plt.savefig(filepath, dpi=300)
 
@@ -336,10 +339,10 @@ if PLOT_MASK:
 
     if SAVE:
             
-        filepath = os.path.join(SAVE_DIR, f'image_mask_{Cmeas_name}_right_roi-{ROI_SELECTION}_{NOISE_MODEL}.png')
+        filepath = os.path.join(SAVE_DIR, f'task-{TASK}_image_mask_{Cmeas_name}_right_roi-{ROI_SELECTION}_{NOISE_MODEL}.png')
         p0_right.screenshot(filepath)
         
-        filepath = os.path.join(SAVE_DIR, f'image_mask_{Cmeas_name}_left_roi-{ROI_SELECTION}_{NOISE_MODEL}.png')
+        filepath = os.path.join(SAVE_DIR, f'task-{TASK}_image_mask_{Cmeas_name}_left_roi-{ROI_SELECTION}_{NOISE_MODEL}.png')
         p0_left.screenshot(filepath)
         
     else:

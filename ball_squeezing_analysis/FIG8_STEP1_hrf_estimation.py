@@ -48,7 +48,7 @@ Configurables (defaults shown)
     - Task identifier used to build file IDs.
 - N_RUNS (int): 3
     - Number of runs to process per subject.
-- excluded (list[str]) : ['sub-538', 'sub-549', 'sub-547']
+- EXCLUDED (list[str]) : ['sub-538', 'sub-549', 'sub-547']
     - Subject IDs to skip.
 
 GLM configuration (constructed from globals)
@@ -78,12 +78,15 @@ Outputs
   - 'hrf_per_subj' (xarray): estimated HRF per channel/time/chromophore/trial_type
   - 'hrf_mse_per_subj' (xarray): MSE of HRF estimates
   - 'bad_indices' (np.ndarray): indices of bad channels
+  - saved to <ROOT_DIR>/derivatives/processed_data/<subj>/<subj>_conc_o_hrf_estimates_<NOISE_MODEL>.pkl.gz
+- Optional GLM residual saved to the subject save directory when
+    SAVE_RESIDUAL is True.
 
-Assumptions and dependencies
+Dependencies
 ----------------------------
-- Requires the project-specific `cedalion` package and helper modules
-  `processing_func` (added to sys.path in the script).
-- Uses `pint` unit handling exposed via `cedalion.units`.
+Requires the project `cedalion` package and helper modules available via
+the project's modules path (processing_func). Also uses xarray, numpy,
+pandas and python's gzip/pickle.
 
 Author: Laura Carlton
 """
@@ -118,10 +121,10 @@ SAVE_RESIDUAL = False
 NOISE_MODEL = 'ols'
 TASK = 'BS'
 N_RUNS = 3
-excluded = ['sub-538', 'sub-549', 'sub-547']
+EXCLUDED = ['sub-538', 'sub-549', 'sub-547']
 
 dirs = os.listdir(ROOT_DIR)
-subject_list = [d for d in dirs if 'sub' in d and d not in excluded]
+subject_list = [d for d in dirs if 'sub' in d and d not in EXCLUDED]
 
 PROBE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'fw', 'ICBM152')
 
@@ -333,8 +336,7 @@ for ss, subject in enumerate(subject_list):
         print('\tHRF estimation complete')
 
         # save per subject results concentration and then image recon will take and convert to OD 
-        file_path_pkl = os.path.join(cfg_dataset['root_dir'], 'derivatives', 'processed_data', subject,
-                                        f"{subject}_task-{TASK}_{REC_STR}_hrf_estimates_{NOISE_MODEL}.pkl.gz")
+        file_path_pkl = os.path.join(SAVE_DIR, f"{subject}_task-{TASK}_{REC_STR}_hrf_estimates_{NOISE_MODEL}.pkl.gz")
 
         # save the individual results to a pickle file for image recon
         file = gzip.GzipFile(file_path_pkl, 'wb')

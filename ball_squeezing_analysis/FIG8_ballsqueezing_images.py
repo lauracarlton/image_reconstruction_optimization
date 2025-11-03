@@ -29,6 +29,7 @@ Configurables (defaults shown)
 -----------------------------
 - ROOT_DIR (str): path to dataset (default used below)
 - REC_STR (str): 'conc_o'         # record string (not directly modified here)
+- TASK (str): 'BS'                # task identifier used in file IDs
 - NOISE_MODEL (str): 'ar_irls'    # used in file naming
 - FNAME_FLAG (str): 'mag'         # part of input filename flag - either 'mag' or 'ts'
 - C_MEAS_FLAG (bool): True        # part of input filename flag
@@ -82,6 +83,7 @@ import image_recon_func as irf
 #%% set up config parameters
 ROOT_DIR = os.path.join('/projectnb', 'nphfnirs', 's', 'datasets', 'BSMW_Laura_Miray_2025', 'BS_bids')
 REC_STR = 'conc_o'
+TASK = 'BS'
 NOISE_MODEL = 'ar_irls'
 FNAME_FLAG = 'mag'
 C_MEAS_FLAG = True
@@ -131,8 +133,8 @@ if SPATIAL_SMOOTHING:
 else:
     smoothing_name = ''
 
-DATA_DIR = os.path.join(ROOT_DIR, 'derivatives', 'processed_data', 'image_space')
-SAVE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'plots', 'image_space')
+DATA_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'processed_data', 'image_space')
+SAVE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'plots', 'image_space')
 
 os.makedirs(SAVE_DIR, exist_ok=True)
 
@@ -176,9 +178,9 @@ for cfg in cfg_list[:1]:
         Cmeas_name = 'noCmeas'
         
     if SB:
-        filepath = os.path.join(DATA_DIR, f'image_hrf_{FNAME_FLAG}_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_Cmeas_{NOISE_MODEL}{smoothing_name}.pkl.gz')
+        filepath = os.path.join(DATA_DIR, f'image_hrf_task-{TASK}_{FNAME_FLAG}_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_Cmeas_{NOISE_MODEL}{smoothing_name}.pkl.gz')
     else:
-        filepath = os.path.join(DATA_DIR, f'image_hrf_{FNAME_FLAG}_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_{direct_name}_Cmeas_{NOISE_MODEL}{smoothing_name}.pkl.gz')
+        filepath = os.path.join(DATA_DIR, f'image_hrf_task-{TASK}_{FNAME_FLAG}_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_{direct_name}_Cmeas_{NOISE_MODEL}{smoothing_name}.pkl.gz')
 
 
     with gzip.open( filepath, 'rb') as f:
@@ -262,7 +264,7 @@ for cfg in cfg_list[:1]:
                         if not os.path.exists(save_dir_tmp):
                             os.makedirs(save_dir_tmp)
 
-                        file_name = f'IMG_{FNAME_FLAG}_{flag_condition}_{flag_img}_{chromo}_{surface}_scale-{SCALE}{smoothing_name}.png'
+                        file_name = f'IMG_task-{TASK}_{FNAME_FLAG}_{flag_condition}_{flag_img}_{chromo}_{surface}_scale-{SCALE}{smoothing_name}.png'
                         p.screenshot( os.path.join(save_dir_tmp, file_name) )
                         p.close()
                     else:
