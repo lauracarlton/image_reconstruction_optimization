@@ -1,8 +1,15 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Preprocessing and HRF estimation for the ball squeezing dataset provided in "PAPER"
 
+CONFIGURE:
+    - 
+
+@author: lcarlton
+"""
 # %% Imports
 ##############################################################################
-#%matplotlib widget
-
 import os
 import gzip
 import pickle
@@ -25,21 +32,22 @@ import processing_func as pf
 # Turn off all warnings
 warnings.filterwarnings('ignore')
 
-
 #%% Initial root directory and analysis parameters
-ROOT_DIR = "/projectnb/nphfnirs/s/datasets/BSMW_Laura_Miray_2025/BS_bids/"
-
-dirs = os.listdir(ROOT_DIR)
-excluded = ['sub-538', 'sub-549', 'sub-547'] 
-subject_list = [d for d in dirs if 'sub' in d and d not in excluded]
-
-PROBE_DIR = ROOT_DIR + 'derivatives/cedalion/fw/ICBM152/'
-Adot = load_Adot(os.path.join(PROBE_DIR, 'Adot.nc'))
-
+ROOT_DIR = os.path.join('/projectnb', 'nphfnirs', 's', 'datasets', 'BSMW_Laura_Miray_2025', 'BS_bids')
 RUN_PREPROCESS = True
 RUN_HRF_ESTIMATION = True
-SAVE_RESIDUAL = True
+SAVE_RESIDUAL = False
 NOISE_MODEL = 'ols'
+TASK = 'BS'
+N_RUNS = 3
+excluded = ['sub-538', 'sub-549', 'sub-547']
+
+dirs = os.listdir(ROOT_DIR)
+subject_list = [d for d in dirs if 'sub' in d and d not in excluded]
+
+PROBE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'fw', 'ICBM152')
+
+Adot = load_Adot(os.path.join(PROBE_DIR, 'Adot.nc'))
 
 if NOISE_MODEL == 'ols':
     DO_TDDR = True
@@ -76,7 +84,7 @@ cfg_dataset = {
 
     'root_dir' : ROOT_DIR,
     'subj_ids' : subject_list,
-    'file_ids' : ['BS_run-01', 'BS_run-02', 'BS_run-03'],
+    'file_ids' : [f'{TASK}_run-0{i}' for i in range(1, N_RUNS+1)],
 }
 
 cfg_prune = {
@@ -97,7 +105,7 @@ cfg_bandpass = {
     'fmax' : F_MAX
 }
 
-# if block averaging on OD:
+# values for manual adjustment of channel space MSE in OD
 cfg_mse = {
     'mse_val_for_bad_data' : 1e1, 
     'mse_amp_thresh' : 1e-3*units.V,
