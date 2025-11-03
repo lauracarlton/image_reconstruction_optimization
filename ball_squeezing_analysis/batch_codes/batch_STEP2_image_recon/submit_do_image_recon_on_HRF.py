@@ -38,27 +38,34 @@ Notes
 Author: Laura Carlton
 """
 
-#%%
+# %%
 import os
 import subprocess
 
 # --------------------- CONFIG ---------------------
-ROOT_DIR = os.path.join('/projectnb', 'nphfnirs', 's', 'datasets', 'BSMW_Laura_Miray_2025', 'BS_bids')
-EXCLUDED = ['sub-538', 'sub-549', 'sub-547']
+ROOT_DIR = os.path.join("/projectnb", "nphfnirs", "s", "datasets", "BSMW_Laura_Miray_2025", "BS_bids")
+EXCLUDED = ["sub-538", "sub-549", "sub-547"]
 
 SHELL_SCRIPT = os.path.join(
-    '/projectnb', 'nphfnirs', 's', 'users', 'lcarlton', 'ANALYSIS_CODE',
-    'imaging_paper_figure_code', 'ball_squeezing_analysis',
-    'batch_codes', 'batch_code_image_recon', 'shell_do_image_recon_on_HRF.sh'
+    "/projectnb",
+    "nphfnirs",
+    "s",
+    "users",
+    "lcarlton",
+    "ANALYSIS_CODE",
+    "imaging_paper_figure_code",
+    "ball_squeezing_analysis",
+    "batch_codes",
+    "batch_code_image_recon",
+    "shell_do_image_recon_on_HRF.sh",
 )
 # --------------------------------------------------
 
 # list entries and filter to directories that look like subjects
 dirs = os.listdir(ROOT_DIR)
-subject_list = [d for d in dirs if 'sub' in d and d not in EXCLUDED]
+subject_list = [d for d in dirs if "sub" in d and d not in EXCLUDED]
 
 for subj in subject_list:
     qsub_command = f"qsub {SHELL_SCRIPT} {subj}"
-    print('Running:', qsub_command)
+    print("Running:", qsub_command)
     subprocess.run(qsub_command, shell=True)
-
