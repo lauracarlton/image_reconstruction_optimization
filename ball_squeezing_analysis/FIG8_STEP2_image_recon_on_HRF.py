@@ -1,71 +1,98 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Thu Feb 20 15:48:36 2025
+FIG8_STEP2_image_recon_on_HRF.py
 
-@author: lcarlton
+Image reconstruction applied to per-subject HRF estimates produced by
+FIG8_STEP1_hrf_estimation.py.
+
+This script performs per-subject image reconstruction across several
+regularization configurations (direct/indirect and spatial basis (SB) options).
+For each subject it:
+
+- Loads precomputed HRF estimates and MSE (gzipped pickle produced by STEP1).
+- Converts concentration HRFs to optical density (OD) using subject geometry.
+- Computes measurement-space noise (C_meas) from channel MSE and uses it to
+    weight image reconstruction.
+- Runs image reconstruction (via project helper `image_recon_func`) to produce
+    voxel/time images and per-image noise estimates.
+- Saves G-matrix basis files for later reuse if they don't already exist.
+
+Usage
+-----
+- Configure the runtime variables in the CONFIG section below (ROOT_DIR,
+    PROBE_DIR, NOISE_MODEL, flags, regularization configs).
+- Run from the command line:
+
+        python FIG8_STEP2_image_recon_on_HRF.py
+
+Inputs
+------
+- Root dataset folder containing per-subject `nirs` subfolders and STEP1
+    outputs located under `<ROOT_DIR>/derivatives/processed_data/<subject>/`.
+- Forward model `Adot.nc` in the PROBE_DIR used for sensitivity and masking.
+
+Configurables (defaults shown)
+-----------------------------
+- ROOT_DIR (str): '/projectnb/nphfnirs/s/datasets/BSMW_Laura_Miray_2025/BS_bids'
+        - Path to BIDS-like dataset used by STEP1 outputs and subject SNIRF files.
+- NOISE_MODEL (str): 'ar_irls'
+        - Noise-model label used for solving the GLM when reading per-subject STEP1 outputs.
+- REC_STR (str): 'conc_o'
+        - Record string pointing to concentration data used by STEP1.
+- CMEAS_FLAG (bool): True
+    - Whether to use measured C_meas when performing image reconstruction.
+- MAG_TS_FLAG (str): 'MAG'  # expected values: 'MAG' or 'TS'
+        - Controls whether to reduce HRF to a single magnitude value (MAG) or
+            keep time series (TS) when reconstructing.
+- T_WIN (list[int]): [5, 8]
+        - Time window (seconds) used for computing magnitude when MAG flag is set.
+- cfg_mse (dict): keys for MSE masking and thresholds (see script for defaults).
+- cfg_list (list[dict]): Regularization configurations evaluated (alpha_meas,
+    alpha_spatial, DIRECT, SB, sigma_brain, sigma_scalp).
+
+Outputs
+-------
+- For each subject and configuration, a gzipped pickle saved to:
+    `<ROOT_DIR>/derivatives/processed_data/image_space/<subject>/` containing:
+    - 'X_hrf' : reconstructed image(s) (xarray)
+    - 'X_mse' : per-image MSE estimates (xarray)
+
+Assumptions and dependencies
+----------------------------
+- Requires the `cedalion` package and the project's helper modules:
+    `image_recon_func` and `spatial_basis_funs` (sys.path is extended in the
+    script to load these).
+- Uses xarray and pint-aware arrays returned by `cedalion` operations.
+
+Author: Laura Carlton
 """
 #%%
 import os
+import sys
 import gzip
 import pickle
+import warnings
 
 import xarray as xr
 from cedalion import nirs, units, io
 from cedalion.io.forward_model import load_Adot
 
 # import my own functions from a different directorys
-import sys
 sys.path.append('/projectnb/nphfnirs/s/users/lcarlton/ANALYSIS_CODE/imaging_paper_figure_code/modules/')
 import image_recon_func as irf
 import spatial_basis_funs as sbf
 
 # Turn off all warnings
-import warnings
 warnings.filterwarnings('ignore')
 
-#%% set up config parameters
-ROOT_DIR = os.path.join('/projectnb', 'nphfnirs', 's', 'datasets', 'BSMW_Laura_Miray_2025', 'BS_bids/')
-
-dirs = os.listdir(ROOT_DIR)
-excluded = ['sub-538', 'sub-549', 'sub-547'] 
-subject_list = [d for d in dirs if 'sub' in d and d not in excluded]
-
-PROBE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'fw', 'ICBM152')
-
+# %% set up config parameters
+ROOT_DIR = os.path.join('/projectnb', 'nphfnirs', 's', 'datasets', 'BSMW_Laura_Miray_2025', 'BS_bids')
 NOISE_MODEL = 'ar_irls'
 REC_STR = 'conc_o'
-
-C_meas_flag = True
-MAG_TS_FLAG = 'mag'
-
+CMEAS_FLAG = True
+MAG_TS_FLAG = 'MAG' # expected values: 'MAG' or 'TS' (case-sensitive in downstream checks)
 T_WIN = [5, 8]
-head_model = 'ICBM152'
-
-cfg_mse = {
-    'mse_val_for_bad_data' : 1e1 , 
-    'mse_amp_thresh' : 1e-3*units.V,
-    'blockaverage_val' : 0 ,
-     'mse_min_thresh' : 1e-6
-    }
-
-#%% load head model 
-head, PARCEL_DIR = irf.load_head_model('ICBM152', with_parcels=True)
-Adot = load_Adot(os.path.join(PROBE_DIR, 'Adot.nc'))
-
-#%% run image recon
-"""
-do the image reconstruction of each subject independently 
-- this is the unweighted subject block average magnitude 
-- then reconstruct their individual MSE
-- then get the weighted average in image space 
-- get the total standard error using between + within subject MSE 
-"""
-
-threshold = -2 # log10 absolute
-wl_idx = 1
-
-M = sbf.get_sensitivity_mask(Adot, threshold, wl_idx)
 
 cfg_list = [            
             {'alpha_meas': 1e4,
@@ -98,14 +125,32 @@ cfg_list = [
 
      ]
 
-dpf = xr.DataArray(
-                    [1, 1],
-                    dims="wavelength",
-                    coords={"wavelength": amp.wavelength},
-                    )
-E = nirs.get_extinction_coefficients('prahl', amp.wavelength)
+cfg_mse = {
+    'mse_val_for_bad_data' : 1e1 , 
+    'mse_amp_thresh' : 1e-3*units.V,
+    'blockaverage_val' : 0 ,
+     'mse_min_thresh' : 1e-6
+    }
 
-#%%
+dirs = os.listdir(ROOT_DIR)
+excluded = ['sub-538', 'sub-549', 'sub-547'] 
+subject_list = [d for d in dirs if 'sub' in d and d not in excluded]
+
+PROBE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'fw', 'ICBM152')
+
+#%% load head model 
+head, PARCEL_DIR = irf.load_head_model('ICBM152', with_parcels=True)
+Adot = load_Adot(os.path.join(PROBE_DIR, 'Adot.nc'))
+
+#%% run image recon
+"""
+do the image reconstruction of each subject independently 
+- this is the unweighted subject block average magnitude 
+- then reconstruct their individual MSE
+- then get the weighted average in image space 
+- get the total standard error using between + within subject MSE 
+"""
+
 for cfg in cfg_list:
     F = None
     D = None
@@ -160,14 +205,17 @@ for cfg in cfg_list:
         SAVE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'processed_data', 'image_space', subject)
         os.makedirs(SAVE_DIR, exist_ok=True)
 
-        recordings = io.read_snirf(ROOT_DIR + f'{subject}/nirs/{subject}_task-BS_run-01_nirs.snirf')
+        recordings = io.read_snirf(os.path.join(ROOT_DIR, subject, 'nirs', f'{subject}_task-BS_run-01_nirs.snirf'))
         rec = recordings[0]
         geo3d = rec.geo3d
         amp = rec['amp']
+        # create wavelength-dependent helpers now that `amp` is available
+        dpf = xr.DataArray([1, 1], dims="wavelength", coords={"wavelength": amp.wavelength})
+        E = nirs.get_extinction_coefficients('prahl', amp.wavelength)
         meas_list = rec._measurement_lists['amp']
 
         print("Loading saved data")
-        with gzip.open( os.path.join(ROOT_DIR, 'derivatives', 'processed_data', f'{subject}/{subject}_{REC_STR}_hrf_estimates_{NOISE_MODEL}.pkl.gz'), 'rb') as f:
+        with gzip.open(os.path.join(ROOT_DIR, 'derivatives', 'processed_data', subject, f'{subject}_{REC_STR}_hrf_estimates_{NOISE_MODEL}.pkl.gz'), 'rb') as f:
             all_results = pickle.load(f)
                 
         subj_hrf = all_results['hrf_per_subj']
@@ -209,10 +257,10 @@ for cfg in cfg_list:
                                                         F = F, D = D, G = G)
             
             if SB and not G_EXISTS:
-                with open(PROBE_DIR + f'G_matrix_sigmabrain-{float(sigma_brain)}.pkl', 'wb') as f:
+                with open(os.path.join(PROBE_DIR, f'G_matrix_sigmabrain-{float(sigma_brain)}.pkl'), 'wb') as f:
                     pickle.dump(G['G_brain'], f)
 
-                with open(PROBE_DIR + f'G_matrix_sigmascalp-{float(sigma_scalp)}.pkl', 'wb') as f:
+                with open(os.path.join(PROBE_DIR, f'G_matrix_sigmascalp-{float(sigma_scalp)}.pkl'), 'wb') as f:
                     pickle.dump(G['G_scalp'], f)
 
                 G_EXISTS = True

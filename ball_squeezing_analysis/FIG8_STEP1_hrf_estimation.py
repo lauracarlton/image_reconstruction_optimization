@@ -1,12 +1,91 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Preprocessing and HRF estimation for the ball squeezing dataset provided in "PAPER"
+FIG8_STEP1_hrf_estimation.py
 
-CONFIGURE:
-    - 
+Preprocessing and hemodynamic response function (HRF) estimation pipeline for the
+ball-squeezing fNIRS dataset as done in "Surface-Based Image Reconstruction Optimization for High-Density Functional Near Infrared Spectroscopy".
 
-@author: lcarlton
+This script performs the following high-level steps for each subject and run:
+
+- Load raw SNIRF recordings and associated *_events.tsv stimulus files.
+- Identify bad channels based on amplitude, SNR and other heuristics.
+- Convert raw amplitudes to optical density (OD) and concentration.
+- Optional motion correction (TDDR) and optional bandpass filtering.
+- Fit a GLM to estimate the HRF (supports 'ols' and 'ar_irls' noise models).
+- Save per-subject preprocessed results and HRF estimates as gzipped pickles
+  under <ROOT_DIR>/derivatives/processed_data/<sub>.
+
+Usage
+-----
+- Edit configuration values in the "CONFIGURE" section below (ROOT_DIR,
+  NOISE_MODEL, RUN_PREPROCESS, RUN_HRF_ESTIMATION, etc.).
+- Run from the command line:
+
+    python FIG8_STEP1_hrf_estimation.py
+
+Inputs
+------
+- A BIDS-like folder structure under ROOT_DIR containing subject folders with
+  a `nirs` subfolder and files like
+  `<sub>_task-<TASK>_run-0X_nirs.snirf` plus matching `_events.tsv` files.
+
+Configurables (defaults shown)
+-----------------------------
+- ROOT_DIR (str): '/projectnb/nphfnirs/s/datasets/BSMW_Laura_Miray_2025/BS_bids'
+    - Root dataset path containing subject folders.
+- RUN_PREPROCESS (bool): True
+    - If True, perform preprocessing and save per-subject intermediate results.
+    - Else, load previously saved preprocessed data.
+- RUN_HRF_ESTIMATION (bool): True
+    - If True, run the GLM-based HRF estimation step.
+- SAVE_RESIDUAL (bool): False
+    - If True, save GLM residuals per subject.
+- NOISE_MODEL (str): 'ols'  # supported: 'ols', 'ar_irls'
+    - Noise model used for GLM fitting.
+    - Controls whether TDDR/bandpass (ols) or raw concentration (ar_irls) is used.
+- TASK (str): 'BS'
+    - Task identifier used to build file IDs.
+- N_RUNS (int): 3
+    - Number of runs to process per subject.
+- excluded (list[str]) : ['sub-538', 'sub-549', 'sub-547']
+    - Subject IDs to skip.
+
+GLM configuration (constructed from globals)
+------------------------------------------
+- cfg_GLM (dict): keys set automatically from NOISE_MODEL and DRIFT_ORDER:
+    - do_drift (bool), do_drift_legendre (bool), do_short_sep (bool),
+      drift_order (int), distance_threshold (pint length), short_channel_method (str),
+      noise_model (str), t_delta/t_std/t_pre/t_post (pint time values)
+
+Dataset and pruning parameters
+-----------------------------
+- cfg_dataset (dict): contains 'root_dir', 'subj_ids', and 'file_ids' (built from TASK and N_RUNS).
+- cfg_prune (dict): channel pruning thresholds and parameters (defaults shown in script):
+    - snr_thresh: 5
+    - sd_thresh: [1, 40] * mm
+    - amp_thresh: [1e-3, 0.84] * V
+    - perc_time_clean_thresh, sci_threshold, psp_threshold, window_length, flag_use_sci, flag_use_psp
+    - channel_sel: derived from the forward-model Adot (`Adot.channel`)
+
+- cfg_bandpass (dict): {'fmin': 0*Hz, 'fmax': 0.5*Hz}  # depends on NOISE_MODEL
+
+- cfg_mse (dict): values used to detect/flag bad channels by MSE and amplitude thresholds.
+
+Outputs
+-------
+- Per-subject gzip-compressed pickle containing a dict with keys:
+  - 'hrf_per_subj' (xarray): estimated HRF per channel/time/chromophore/trial_type
+  - 'hrf_mse_per_subj' (xarray): MSE of HRF estimates
+  - 'bad_indices' (np.ndarray): indices of bad channels
+
+Assumptions and dependencies
+----------------------------
+- Requires the project-specific `cedalion` package and helper modules
+  `processing_func` (added to sys.path in the script).
+- Uses `pint` unit handling exposed via `cedalion.units`.
+
+Author: Laura Carlton
 """
 # %% Imports
 ##############################################################################
@@ -26,7 +105,6 @@ import cedalion.sigproc.motion_correct as motion
 from cedalion.sigproc.frequency import freq_filter
 
 sys.path.append('/projectnb/nphfnirs/s/users/lcarlton/ANALYSIS_CODE/imaging_paper_figure_code/modules/')
-import image_recon_func as irf
 import processing_func as pf
 
 # Turn off all warnings
@@ -117,21 +195,18 @@ n_files_per_subject = len(cfg_dataset['file_ids'])
 
 #%% RUN PREPROCESSING
 # make sure derivatives folders exist
-der_dir = os.path.join(cfg_dataset['root_dir'], 'derivatives')
-if not os.path.exists(der_dir):
-    os.makedirs(der_dir)
-der_dir = os.path.join(cfg_dataset['root_dir'], 'derivatives', 'plots')
-if not os.path.exists(der_dir):
-    os.makedirs(der_dir)
-der_dir = os.path.join(cfg_dataset['root_dir'], 'derivatives', 'processed_data')
-if not os.path.exists(der_dir):
-    os.makedirs(der_dir)
+der_dir = os.path.join(cfg_dataset['root_dir'], 'derivatives', 'cedalion')
+os.makedirs(der_dir, exist_ok=True)
+der_dir = os.path.join(cfg_dataset['root_dir'], 'derivatives', 'cedalion', 'plots')
+os.makedirs(der_dir, exist_ok=True)
+der_dir = os.path.join(cfg_dataset['root_dir'], 'derivatives', 'cedalion', 'processed_data')
+os.makedirs(der_dir, exist_ok=True) 
 
-    # loop over subjects and files
+# loop over subjects and files
 for ss, subject in enumerate(subject_list):
 
     print( f"Processing subject {ss+1} of {len(subject_list)}" )
-    SAVE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'processed_data', subject)
+    SAVE_DIR = os.path.join(der_dir, subject)
     os.makedirs(SAVE_DIR, exist_ok=True)  
 
     if RUN_PREPROCESS:
@@ -210,12 +285,12 @@ for ss, subject in enumerate(subject_list):
                     'geo3d': geo3d
                     }
 
-        with gzip.open( os.path.join(SAVE_DIR, f'{subject}_preprocessed_results_{NOISE_MODEL}.pkl'), 'wb') as f:
+        with gzip.open( os.path.join(SAVE_DIR, f'{subject}_task-{TASK}_preprocessed_results_{NOISE_MODEL}.pkl'), 'wb') as f:
             pickle.dump(results, f, protocol=pickle.HIGHEST_PROTOCOL
             )
     else:
         print('\tLOADING PREPROCESSED DATA')
-        with gzip.open( os.path.join(SAVE_DIR, f'{subject}_preprocessed_results_{NOISE_MODEL}.pkl'), 'rb') as f:
+        with gzip.open( os.path.join(SAVE_DIR, f'{subject}_task-{TASK}_preprocessed_results_{NOISE_MODEL}.pkl'), 'rb') as f:
             results = pickle.load(f)
         
         all_runs = results['runs']
@@ -238,7 +313,7 @@ for ss, subject in enumerate(subject_list):
         results, hrf_estimate, hrf_mse = pf.GLM(run_ts_list, cfg_GLM, geo3d, all_chs_pruned, all_stims)
         residual = results.sm.resid
 
-        # reset the values for bad channels 
+        # get the indices for bad channels 
         amp = all_runs[0]['amp'].mean('time').min('wavelength') # take the minimum across wavelengths
         n_chs = len(amp.channel)
         idx_amp = np.where(amp < cfg_mse['mse_amp_thresh'])[0]
@@ -260,7 +335,7 @@ for ss, subject in enumerate(subject_list):
 
         # save per subject results concentration and then image recon will take and convert to OD 
         file_path_pkl = os.path.join(cfg_dataset['root_dir'], 'derivatives', 'processed_data', subject,
-                                        f"{subject}_{REC_STR}_hrf_estimates_{NOISE_MODEL}.pkl.gz")
+                                        f"{subject}_task-{TASK}_{REC_STR}_hrf_estimates_{NOISE_MODEL}.pkl.gz")
 
         # save the individual results to a pickle file for image recon
         file = gzip.GzipFile(file_path_pkl, 'wb')
@@ -275,7 +350,7 @@ for ss, subject in enumerate(subject_list):
         file.close()
 
         if SAVE_RESIDUAL:
-            file_path_pkl = os.path.join(SAVE_DIR, f"{subject}_{REC_STR}_glm_residual_{NOISE_MODEL}.pkl")
+            file_path_pkl = os.path.join(SAVE_DIR, f"{subject}_task-{TASK}_{REC_STR}_glm_residual_{NOISE_MODEL}.pkl")
 
             residual = results.sm.resid
             with open(file_path_pkl, 'wb') as f:

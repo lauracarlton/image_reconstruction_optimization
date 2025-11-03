@@ -1,77 +1,101 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Thu Jun 12 16:03:35 2025
+FIG8_ballsqueezing_images.py
 
-@author: lcarlton
+Builds and displays brain/scalp surface images from image-space results
+produced by the FIG8 image-reconstruction pipeline.
+
+This script loads precomputed image-space results (gzipped pickles) for
+different reconstruction regularization configurations, applies optional
+spatial smoothing, selects HbO/HbR and trial conditions, and renders
+surface visualizations (t-stat, magnitude, or noise) using PyVista.
+
+High-level steps
+----------------
+- Locate and load gzipped image-space result files from `DATA_DIR`.
+- Optionally reduce time-series to a magnitude over `t_win` when requested.
+- Mask images by brain/scalp and sensitivity maps (Adot / mask threshold).
+- Render surface plots per condition/chromophore and save screenshots.
+
+Usage
+-----
+Edit the CONFIG section below to point to your dataset and choose the
+visualization options, then run:
+
+        python FIG8_ballsqueezing_images.py
+
+Configurables (defaults shown)
+-----------------------------
+- ROOT_DIR (str): path to dataset (default used below)
+- REC_STR (str): 'conc_o'         # record string (not directly modified here)
+- NOISE_MODEL (str): 'ar_irls'    # used in file naming
+- FNAME_FLAG (str): 'mag'         # part of input filename flag - either 'mag' or 'ts'
+- C_MEAS_FLAG (bool): True        # part of input filename flag
+- T_WIN (list): [5, 8]           # time window (s) to average when using 'ts' inputs
+- PLOT_SAVE (bool): False         # whether to save produced figures
+- SPATIAL_SMOOTHING (bool): True  # whether to append smoothing suffix to filenames
+- SIGMA_SMOOTHING (int): 50       # smoothing kernel size (for filename only)
+
+Visualization options
+---------------------
+- SCALE (float): 1                  # scaling factor for color limits
+- FLAG_IMG_LIST: which image types to render (e.g., 'tstat', 'mag', 'noise')
+- FLAG_BRAIN_LIST: whether to plot brain (True) or scalp (False) surfaces
+- FLAG_HBO_LIST: whether to display HbO (True) or HbR (False)
+- FLAG_CONDITION_LIST: which trial conditions to visualize (e.g., 'right', 'left')
+- cfg_list (list[dict]): regularization configurations evaluated (see code
+    for defaults: alpha_meas, alpha_spatial, DIRECT, SB, sigma_brain, sigma_scalp)
+
+Outputs
+-------
+- Optional PNG screenshots written to `SAVE_DIR` (one folder per config).
+
+Dependencies
+------------
+- pyvista, matplotlib, xarray, numpy and the project `cedalion` modules.
+- Project helper modules `spatial_basis_funs` and `image_recon_func` are
+    imported via a sys.path.append to the project's modules directory.
+
+Author: Laura Carlton
 """
 #%%
-import pyvista as pv
 import os
-import cedalion
-import cedalion.nirs
-import xarray as xr
-from cedalion import units
+import sys
 import gzip
 import pickle
+
+import pyvista as pv
 import numpy as np 
+import matplotlib.pyplot as plt
+
 import cedalion.dataclasses as cdc 
 from cedalion.io.forward_model import load_Adot
 
-import matplotlib.pyplot as plt
 pv.set_jupyter_backend('static')
+
 # import my own functions from a different directory
-import sys
 sys.path.append('/projectnb/nphfnirs/s/users/lcarlton/ANALYSIS_CODE/imaging_paper_figure_code/modules/')
 import spatial_basis_funs as sbf
 import image_recon_func as irf
 
 #%% set up config parameters
-rec_str = 'conc_o'
-noise_model = 'ar_irls'
-fname_flag = 'mag'
-C_meas_flag = True
-t_win = [5, 7]
-file_save = False
-trial_type_img = ['right', 'left']
-t_win = (5,8)
-spatial_smoothing = True
-sigma_smoothing = 50
+ROOT_DIR = os.path.join('/projectnb', 'nphfnirs', 's', 'datasets', 'BSMW_Laura_Miray_2025', 'BS_bids')
+REC_STR = 'conc_o'
+NOISE_MODEL = 'ar_irls'
+FNAME_FLAG = 'mag'
+C_MEAS_FLAG = True
+PLOT_SAVE = False
+T_WIN = [5,8] 
+SPATIAL_SMOOTHING = True
+SIGMA_SMOOTHING = 50
 
-if spatial_smoothing:
-    smoothing_name = f'_smoothing-{sigma_smoothing}'
-else:
-    smoothing_name = ''
+SCALE = 1
+FLAG_HBO_LIST = [True] #, False] #, False]
+FLAG_BRAIN_LIST = [True] #, False]
+FLAG_IMG_LIST = ['tstat','mag'] #, 'noise'] #['mag', 'tstat', 'noise'] #, 'noise'
+FLAG_CONDITION_LIST = ['right'] #, 'left']
 
-ROOT_DIR = "/projectnb/nphfnirs/s/datasets/BSMW_Laura_Miray_2025/BS_bids/"
-DATA_DIR = os.path.join(ROOT_DIR, 'derivatives', 'processed_data', 'image_space')
-SAVE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'plots', 'image_space')
-
-os.makedirs(SAVE_DIR, exist_ok=True)
-
-PROBE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'fw', 'ICBM152')
-head_model = 'ICBM152'
-
-
-#%% load head model 
-head, PARCEL_DIR = irf.load_head_model('ICBM152', with_parcels=True)
-Adot = load_Adot(os.path.join(PROBE_DIR, 'Adot.nc'))
-
-#%% build plots 
-threshold = -2 # log10 absolute
-wl_idx = 1
-M = sbf.get_sensitivity_mask(Adot, threshold, wl_idx)
-SAVE = False
-flag_hbo_list = [True] #, False] #, False]
-flag_brain_list = [True] #, False]
-flag_img_list = ['tstat','mag'] #, 'noise'] #['mag', 'tstat', 'noise'] #, 'noise'
-flag_condition_list = ['right'] #, 'left']
-scale = 1
-flag = 'ts' # or mag
-
-surf = cdc.VTKSurface.from_trimeshsurface(head.brain)
-surf = pv.wrap(surf.mesh)
-      
 cfg_list = [            
             {'alpha_meas': 1e4,
             'alpha_spatial': 1e-3,
@@ -102,8 +126,30 @@ cfg_list = [
             'sigma_scalp': 5},
      ]
 
-# flag_brain = True
+if SPATIAL_SMOOTHING:
+    smoothing_name = f'_smoothing-{SIGMA_SMOOTHING}'
+else:
+    smoothing_name = ''
 
+DATA_DIR = os.path.join(ROOT_DIR, 'derivatives', 'processed_data', 'image_space')
+SAVE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'plots', 'image_space')
+
+os.makedirs(SAVE_DIR, exist_ok=True)
+
+PROBE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'fw', 'ICBM152')
+
+#%% load head model 
+head, PARCEL_DIR = irf.load_head_model('ICBM152', with_parcels=True)
+Adot = load_Adot(os.path.join(PROBE_DIR, 'Adot.nc'))
+
+#%% build plots 
+threshold = -2 # log10 absolute
+wl_idx = 1
+M = sbf.get_sensitivity_mask(Adot, threshold, wl_idx)
+
+surf = cdc.VTKSurface.from_trimeshsurface(head.brain)
+surf = pv.wrap(surf.mesh)
+      
 for cfg in cfg_list[:1]:
     
     all_trial_X_hrf_mag = None
@@ -123,17 +169,17 @@ for cfg in cfg_list[:1]:
         direct_name = 'direct'
     else:
         direct_name = 'indirect'
-    
-    if C_meas_flag:
+
+    if C_MEAS_FLAG:
         Cmeas_name = 'Cmeas'
     else:
         Cmeas_name = 'noCmeas'
         
     if SB:
-        filepath = os.path.join(DATA_DIR, f'image_hrf_{flag}_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_Cmeas_{noise_model}{smoothing_name}.pkl.gz')
+        filepath = os.path.join(DATA_DIR, f'image_hrf_{FNAME_FLAG}_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_Cmeas_{NOISE_MODEL}{smoothing_name}.pkl.gz')
     else:
-        filepath = os.path.join(DATA_DIR, f'image_hrf_{flag}_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_{direct_name}_Cmeas_{noise_model}{smoothing_name}.pkl.gz')
-   
+        filepath = os.path.join(DATA_DIR, f'image_hrf_{FNAME_FLAG}_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_{direct_name}_Cmeas_{NOISE_MODEL}{smoothing_name}.pkl.gz')
+
 
     with gzip.open( filepath, 'rb') as f:
           results = pickle.load(f)
@@ -142,25 +188,23 @@ for cfg in cfg_list[:1]:
     all_trial_X_tstat = results['X_tstat']
     all_trial_X_hrf_mag_weighted = results['X_hrf_ts_weighted']
     all_trial_X_stderr = results['X_std_err']
-    if flag == 'ts':
-        all_trial_X_tstat = all_trial_X_tstat.sel(time=slice(t_win[0], t_win[1])).mean('time')
-        all_trial_X_hrf_mag_weighted = all_trial_X_hrf_mag_weighted.sel(time=slice(t_win[0], t_win[1])).mean('time')
-        all_trial_X_stderr = all_trial_X_stderr.sel(time=slice(t_win[0], t_win[1])).mean('time')
-    
-    for flag_condition in flag_condition_list:
-        
-        for flag_img in flag_img_list:
-            
-            for flag_brain in flag_brain_list:
-                
-                for f, flag_hbo in enumerate(flag_hbo_list):
-                    
-                    p = pv.Plotter(shape=(1,1), window_size = [1000, 1000], off_screen=SAVE)
+    if FNAME_FLAG == 'ts':
+        all_trial_X_tstat = all_trial_X_tstat.sel(time=slice(T_WIN[0], T_WIN[1])).mean('time')
+        all_trial_X_hrf_mag_weighted = all_trial_X_hrf_mag_weighted.sel(time=slice(T_WIN[0], T_WIN[1])).mean('time')
+        all_trial_X_stderr = all_trial_X_stderr.sel(time=slice(T_WIN[0], T_WIN[1])).mean('time')
+
+    for flag_condition in FLAG_CONDITION_LIST:
+
+        for flag_img in FLAG_IMG_LIST:
+
+            for flag_brain in FLAG_BRAIN_LIST:
+
+                for flag_hbo in FLAG_HBO_LIST:
+
+                    p = pv.Plotter(shape=(1,1), window_size = [1000, 1000], off_screen=PLOT_SAVE)
     
                     if flag_img == 'tstat':
                         foo_img = all_trial_X_tstat.sel(trial_type=flag_condition).copy()
-                        # foo_img = foo_img.pint.dequantify()
-                        # foo_img = foo_img.where( abs(foo_img)>t_crit, np.nan ) 
                         title_str = 't-stat'
                     elif flag_img == 'mag':
                         
@@ -191,7 +235,7 @@ for cfg in cfg_list[:1]:
                         
                     masked = foo_img.sel(chromo='HbO')
                     masked = masked.where(np.isfinite(masked))
-                    clim = (-masked.max(skipna=True).values*scale, masked.max(skipna=True).values*scale)
+                    clim = (-masked.max(skipna=True).values*SCALE, masked.max(skipna=True).values*SCALE)
     
                     if flag_hbo:
                         title_str = flag_condition + ': HbO'
@@ -208,7 +252,7 @@ for cfg in cfg_list[:1]:
                     p.camera_position = 'xy'
                     p.add_text(title_str, position='lower_left', font_size=10)
                     
-                    if SAVE:
+                    if PLOT_SAVE:
                         if SB:
                             img_folder =f'images_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_{Cmeas_name}'
                         else:
@@ -217,8 +261,8 @@ for cfg in cfg_list[:1]:
                         save_dir_tmp= os.path.join(SAVE_DIR, img_folder)
                         if not os.path.exists(save_dir_tmp):
                             os.makedirs(save_dir_tmp)
-                            
-                        file_name = f'IMG_{flag}_{flag_condition}_{flag_img}_{chromo}_{surface}_scale-{scale}{smoothing_name}.png'
+
+                        file_name = f'IMG_{FNAME_FLAG}_{flag_condition}_{flag_img}_{chromo}_{surface}_scale-{SCALE}{smoothing_name}.png'
                         p.screenshot( os.path.join(save_dir_tmp, file_name) )
                         p.close()
                     else:
