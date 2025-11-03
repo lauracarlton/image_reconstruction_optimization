@@ -1,4 +1,85 @@
 
+"""
+estimate_HRF_per_subj.py
+
+Estimate per-subject HRFs for the ball-squeezing task.
+
+This script performs the per-subject preprocessing and GLM-based HRF
+estimation used by the ball-squeezing analysis. It is intentionally
+conservative: the top of the file lists the primary configurables (ROOT_DIR,
+which stages to run, and the noise model). The script will either run
+preprocessing over the SNIRF runs for a single subject, or load previously
+saved preprocessed data, then run the HRF estimation and write a gzipped
+pickle with the results.
+
+Usage
+-----
+Run from the command line with a single subject id (BIDS-style):
+
+        python estimate_HRF_per_subj.py sub-618
+
+Configurables (defaults shown)
+-----------------------------
+- ROOT_DIR (str): '/projectnb/nphfnirs/s/datasets/BSMW_Laura_Miray_2025/BS_bids'
+    - Root dataset path containing subject folders.
+- RUN_PREPROCESS (bool): True
+    - If True, perform preprocessing and save per-subject intermediate results.
+    - Else, load previously saved preprocessed data.
+- RUN_HRF_ESTIMATION (bool): True
+    - If True, run the GLM-based HRF estimation step.
+- SAVE_RESIDUAL (bool): False
+    - If True, save GLM residuals per subject.
+- NOISE_MODEL (str): 'ols'  # supported: 'ols', 'ar_irls'
+    - Noise model used for GLM fitting.
+    - Controls whether TDDR/bandpass (ols) or raw concentration (ar_irls) is used.
+- TASK (str): 'BS'
+    - Task identifier used to build file IDs.
+- N_RUNS (int): 3
+    - Number of runs to process per subject.
+
+GLM configuration (constructed from globals)
+------------------------------------------
+- cfg_GLM (dict): keys set automatically from NOISE_MODEL and DRIFT_ORDER:
+    - do_drift (bool), do_drift_legendre (bool), do_short_sep (bool),
+      drift_order (int), distance_threshold (pint length), short_channel_method (str),
+      noise_model (str), t_delta/t_std/t_pre/t_post (pint time values)
+
+Dataset and pruning parameters
+-----------------------------
+- cfg_dataset (dict): contains 'root_dir', 'subj_ids', and 'file_ids' (built from TASK and N_RUNS).
+- cfg_prune (dict): channel pruning thresholds and parameters (defaults shown in script):
+    - snr_thresh: 5
+    - sd_thresh: [1, 40] * mm
+    - amp_thresh: [1e-3, 0.84] * V
+    - perc_time_clean_thresh, sci_threshold, psp_threshold, window_length, flag_use_sci, flag_use_psp
+    - channel_sel: derived from the forward-model Adot (`Adot.channel`)
+
+- cfg_bandpass (dict): {'fmin': 0*Hz, 'fmax': 0.5*Hz}  # depends on NOISE_MODEL
+
+- cfg_mse (dict): values used to detect/flag bad channels by MSE and amplitude thresholds.
+
+Outputs
+-------
+- Per-subject gzip-compressed pickle containing a dict with keys:
+  - 'hrf_per_subj' (xarray): estimated HRF per channel/time/chromophore/trial_type
+  - 'hrf_mse_per_subj' (xarray): MSE of HRF estimates
+  - 'bad_indices' (np.ndarray): indices of bad channels
+Outputs
+-------
+- Per-subject gzipped pickle saved to
+    <ROOT_DIR>/derivatives/processed_data/<subj>/<subj>_conc_o_hrf_estimates_<NOISE_MODEL>.pkl.gz
+- Optional GLM residual saved to the subject save directory when
+    SAVE_RESIDUAL is True.
+
+Dependencies
+------------
+Requires the project `cedalion` package and helper modules available via
+the project's modules path (processing_func). Also uses xarray, numpy,
+pandas and python's gzip/pickle.
+
+Author: Laura Carlton
+"""
+
 # %% Imports
 ##############################################################################
 #%matplotlib widget
@@ -19,7 +100,6 @@ import cedalion.sigproc.motion_correct as motion
 from cedalion.sigproc.frequency import freq_filter
 
 sys.path.append('/projectnb/nphfnirs/s/users/lcarlton/ANALYSIS_CODE/imaging_paper_figure_code/modules/')
-import image_recon_func as irf
 import processing_func as pf
 
 # Turn off all warnings
@@ -30,17 +110,13 @@ subject = str(sys.argv[1])
 # subject = 'sub-618'
 
 #%% Initial root directory and analysis parameters
-ROOT_DIR = "/projectnb/nphfnirs/s/datasets/BSMW_Laura_Miray_2025/BS_bids/"
-SAVE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'processed_data', subject)
-os.makedirs(SAVE_DIR, exist_ok=True)            
-
-PROBE_DIR = ROOT_DIR + 'derivatives/cedalion/fw/ICBM152/'
-Adot = load_Adot(os.path.join(PROBE_DIR, 'Adot.nc'))
-
+ROOT_DIR = os.path.join('/projectnb', 'nphfnirs', 's', 'datasets', 'BSMW_Laura_Miray_2025', 'BS_bids')
 RUN_PREPROCESS = True
+TASK = 'BS'
 RUN_HRF_ESTIMATION = True
 SAVE_RESIDUAL = True
 NOISE_MODEL = 'ar_irls'
+N_RUNS = 3
 
 if NOISE_MODEL == 'ols':
     DO_TDDR = True
@@ -58,6 +134,12 @@ elif NOISE_MODEL == 'ar_irls':
     F_MIN = 0
 else:
     print('Not a valid noise model - please select ols or ar_irls')
+
+SAVE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'processed_data', subject)
+os.makedirs(SAVE_DIR, exist_ok=True)            
+
+PROBE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'fw', 'ICBM152')
+Adot = load_Adot(os.path.join(PROBE_DIR, 'Adot.nc'))
 
 cfg_GLM = {
     'do_drift': DO_DRIFT,
@@ -77,7 +159,7 @@ cfg_dataset = {
 
     'root_dir' : ROOT_DIR,
     'subj_ids' : [subject],
-    'file_ids' : ['BS_run-01', 'BS_run-02', 'BS_run-03'],
+    'file_ids' : [f'{TASK}_run-0{i}' for i in range(1, N_RUNS+1)],
 }
 
 cfg_prune = {
@@ -98,7 +180,7 @@ cfg_bandpass = {
     'fmax' : F_MAX
 }
 
-# if block averaging on OD:
+# values for manual adjustment of channel space MSE in OD
 cfg_mse = {
     'mse_val_for_bad_data' : 1e1, 
     'mse_amp_thresh' : 1e-3*units.V,
@@ -106,29 +188,17 @@ cfg_mse = {
      'mse_min_thresh' : 1e-6
     }
 
-n_files_per_subject = len(cfg_dataset['file_ids'])
-
 #%% RUN PREPROCESSING
-# make sure derivatives folders exist
-der_dir = os.path.join(cfg_dataset['root_dir'], 'derivatives')
-if not os.path.exists(der_dir):
-    os.makedirs(der_dir)
-der_dir = os.path.join(cfg_dataset['root_dir'], 'derivatives', 'plots')
-if not os.path.exists(der_dir):
-    os.makedirs(der_dir)
-der_dir = os.path.join(cfg_dataset['root_dir'], 'derivatives', 'processed_data')
-if not os.path.exists(der_dir):
-    os.makedirs(der_dir)
 
 if RUN_PREPROCESS:
     print('RUNNING PREPROCESSING')
     # loop over subjects and files
 
-    for file_idx in range(n_files_per_subject):
+    for file_idx in range(N_RUNS):
             
         filenm = f"{subject}_task-{cfg_dataset['file_ids'][file_idx]}_nirs"
-        print( f"Processing  {file_idx+1} of {n_files_per_subject} files : {filenm}" )
-        
+        print( f"Processing  {file_idx+1} of {N_RUNS} files : {filenm}" )
+
         subStr = filenm.split('_')[0]
         subDir = os.path.join(cfg_dataset['root_dir'], subStr, 'nirs')
         

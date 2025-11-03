@@ -191,7 +191,6 @@ cfg_mse = {
      'mse_min_thresh' : 1e-6
     }
 
-n_files_per_subject = len(cfg_dataset['file_ids'])
 
 #%% RUN PREPROCESSING
 # make sure derivatives folders exist
@@ -212,11 +211,11 @@ for ss, subject in enumerate(subject_list):
     if RUN_PREPROCESS:
         print('\tRUNNING PREPROCESSING')
 
-        for file_idx in range(n_files_per_subject):
+        for file_idx in range(N_RUNS):
                 
             filenm = f"{subject}_task-{cfg_dataset['file_ids'][file_idx]}_nirs"
-            print( f"\t\tProcessing  {file_idx+1} of {n_files_per_subject} files : {filenm}" )
-            
+            print( f"\t\tProcessing  {file_idx+1} of {N_RUNS} files : {filenm}" )
+
             subStr = filenm.split('_')[0]
             subDir = os.path.join(cfg_dataset['root_dir'], subStr, 'nirs')
             
