@@ -4,6 +4,14 @@
 Submit the batch jobs using this python script.
 Ensure the path to the shell script matches your directory structure
 Specify the image recon parameters you want to test
+Configurables: 
+- CODE_DIR: the directory where all the code from the git repository is held 
+    
+choose the image recon parameters to test 
+- alpha_meas_list: select range of alpha measurement
+- alpha_spatial_list: select range of alpha spatial 
+- sigma_brain_list: select range of sigma brain 
+- sigma_scalp_list: select range of sigma scalp 
 
 @author: lcarlton
 """

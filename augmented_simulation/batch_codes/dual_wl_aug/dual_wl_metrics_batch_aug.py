@@ -42,7 +42,7 @@ import get_image_metrics as gim
 warnings.filterwarnings('ignore')
 
 #%% SETUP CONFIGS
-ROOT_DIR = "/projectnb/nphfnirs/s/datasets/BSMW_Laura_Miray_2025/BS_bids/"
+ROOT_DIR = os.path.join('/projectnb', 'nphfnirs', 's', 'datasets', 'BSMW_Laura_Miray_2025', 'BS_bids')
 HEAD_MODEL = 'ICBM152'
 GLM_METHOD = 'ols'
 TASK = 'RS'
@@ -138,24 +138,25 @@ if sigma_brain > 0 and sigma_scalp > 0:
     print(f'\tsigma brain = {sigma_brain}')
     print(f'\tsigma scalp = {sigma_scalp}')
 
-    if os.path.exists( PROBE_DIR + f'fw/{HEAD_MODEL}/G_matrix_sigmabrain-{sigma_brain}.pkl'):
-        with open(PROBE_DIR + f'fw/{HEAD_MODEL}/G_matrix_sigmabrain-{sigma_brain}.pkl', 'rb') as f:
+    G_brain_path = os.path.join(PROBE_DIR, f'/G_matrix_sigmabrain-{sigma_brain}.pkl')
+    if os.path.exists(G_brain_path):
+        with open(G_brain_path, 'rb') as f:
             G_brain = pickle.load(f)
     else:
         brain_downsampled = sbf.downsample_mesh(head.brain.vertices, M[M.is_brain], sigma_brain*units.mm)
         G_brain = sbf.get_kernel_matrix(brain_downsampled, head.brain.vertices, sigma_brain*units.mm)
-        with open(PROBE_DIR + f'fw/{HEAD_MODEL}/G_matrix_sigmabrain-{sigma_brain}.pkl', 'wb') as f:
+        with open(G_brain_path, 'wb') as f:
                 pickle.dump(G_brain, f)
 
-    if os.path.exists( PROBE_DIR + f'fw/{HEAD_MODEL}/G_matrix_sigmascalp-{sigma_scalp}.pkl'):
-        with open(PROBE_DIR + f'fw/{HEAD_MODEL}/G_matrix_sigmascalp-{sigma_scalp}.pkl', 'rb') as f:
+    G_scalp_path = os.path.join(PROBE_DIR, f'/G_matrix_sigmascalp-{sigma_scalp}.pkl')
+    if os.path.exists(G_scalp_path):
+        with open(G_scalp_path, 'rb') as f:
             G_scalp = pickle.load(f)
     else:
         scalp_downsampled = sbf.downsample_mesh(head.scalp.vertices, M[~M.is_brain], sigma_scalp*units.mm)
         G_scalp = sbf.get_kernel_matrix(scalp_downsampled, head.scalp.vertices, sigma_scalp*units.mm)
-        with open(PROBE_DIR + f'fw/{HEAD_MODEL}/G_matrix_sigmascalp-{sigma_scalp}.pkl', 'wb') as f:
+        with open(G_scalp_path, 'wb') as f:
                 pickle.dump(G_scalp, f)
-   
 
     G = {'G_brain': G_brain,
          'G_scalp': G_scalp}
@@ -432,7 +433,7 @@ RESULTS = {
            'crosstalk_brainVscalp_HbO_indirect': crosstalk_brainVscalp_HbO_indirect,
            }
   
-with open(SAVE_DIR + f'/COMPILED_METRIC_RESULTS_{BLOB_SIGMA.magnitude}mm_scale-{SCALE_FACTOR}_sb-{sigma_brain}_ss-{sigma_scalp}_am-{alpha_meas}_as-{alpha_spatial}_{GLM_METHOD}_dual_wl.pkl', 'wb') as f:
+with open(os.path.join(SAVE_DIR, f'/COMPILED_METRIC_RESULTS_{BLOB_SIGMA.magnitude}mm_scale-{SCALE_FACTOR}_sb-{sigma_brain}_ss-{sigma_scalp}_am-{alpha_meas}_as-{alpha_spatial}_{GLM_METHOD}_dual_wl.pkl'), 'wb') as f:
     pickle.dump(RESULTS, f)
  
 print('Job Complete.')

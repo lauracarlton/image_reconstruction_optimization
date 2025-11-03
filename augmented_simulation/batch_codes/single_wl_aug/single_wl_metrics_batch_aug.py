@@ -31,7 +31,7 @@ import warnings
 import numpy as np 
 import xarray as xr
 
-from cedalion import units, xrutils
+from cedalion import nirs, io, units, xrutils
 import cedalion.sim.synthetic_hrf as synthetic_hrf
 from cedalion.io.forward_model import load_Adot
 
@@ -44,7 +44,6 @@ warnings.filterwarnings('ignore')
 
 #%% SETUP CONFIGS
 ROOT_DIR = os.path.join('/projectnb', 'nphfnirs', 's', 'datasets', 'BSMW_Laura_Miray_2025', 'BS_bids')
-
 HEAD_MODEL = 'ICBM152'
 GLM_METHOD = 'ols'
 TASK = 'RS'
@@ -196,7 +195,7 @@ for vv, seed_vertex in enumerate(VERTEX_LIST):
                          dims=('vertex'),
                          coords={'is_brain':('vertex', A_fw.is_brain.values)})
         
-        cov_img_tmp = W_single_wl *np.sqrt(C_meas.sel(wavelength=850).values) # W is pseudo inverse  --- diagonal (faster than W C W.T)
+        cov_img_tmp = W_single_wl * np.sqrt(C_meas.sel(wavelength=850).values) # W is pseudo inverse  --- diagonal (faster than W C W.T)
         cov_img_diag = np.nansum(cov_img_tmp**2, axis=1)
         
         if sigma_brain > 0:

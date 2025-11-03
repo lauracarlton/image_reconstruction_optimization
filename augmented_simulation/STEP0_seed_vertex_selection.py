@@ -20,6 +20,7 @@ Code will open an interactive plotter
 from __future__ import annotations
 
 import sys
+import os
 import pyvista as pv
 from cedalion import plots
 import cedalion.dataclasses as cdc 
@@ -28,9 +29,8 @@ sys.path.append('/projectnb/nphfnirs/s/users/lcarlton/ANALYSIS_CODE/imaging_pape
 import image_recon_func as irf
 
 #%% LOAD HEAD MODEL 
-ROOT_DIR = "/projectnb/nphfnirs/s/datasets/BSMW_Laura_Miray_2025/BS_bids/"
-
-PROBE_PATH = ROOT_DIR + '/derivatives/cedalion/fw/'
+ROOT_DIR = os.path.join('/projectnb', 'nphfnirs', 's', 'datasets', 'BSMW_Laura_Miray_2025', 'BS_bids')
+PROBE_PATH = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'fw')
 
 Adot, meas_list, geo3d, amp = irf.load_probe(PROBE_PATH)
 head, parcel_dir = irf.load_head_model(with_parcels=False)
@@ -58,7 +58,7 @@ def callback(point, picker):
     point_index = b.find_closest_point(coords)
     # print(f"Index of the selected vertex: {point_index}")
     
-    with open(PROBE_PATH + 'picked_vertex_info.txt', 'a') as log_file:
+    with open(os.path.join(PROBE_PATH, 'picked_vertex_info.txt'), 'a') as log_file:
         log_file.write(f"Coordinates of the selected vertex: {coords}\n")
         log_file.write(f"Index of the selected vertex: {point_index}\n")
 
@@ -74,7 +74,7 @@ b = pv.wrap(b.mesh)
 
 VERTEX_LIST = []
 
-with open(PROBE_PATH + 'picked_vertex_info.txt', "r") as f:
+with open(os.path.join(PROBE_PATH, 'picked_vertex_info.txt'), "r") as f:
     for line in f:
         if "Index of the selected vertex:" in line:
             # Split the line and take the last element (the number)
