@@ -1,20 +1,41 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Mon Oct 15 11:18:23 2025
+STEP0_seed_vertex_selection.py
 
-Select the seed vertices to use in the simulation 
-- assumes the ICBM152 head model
-- provide the path the directory containing information about the probe
+Interactive seed vertex selection for augmented fNIRS simulations. This module
+allows users to visualize the cortical surface mesh and manually select seed
+vertices that will be used to generate synthetic activation patterns for
+simulation studies.
 
-Code will open an interactive plotter
-- select vertices you wish to use as seeds by right clicking 
-- these will be stored in a .txt file in the specified probe directory 
-- close the plotter once you are done selecting points 
+Usage
+-----
+Edit the CONFIG section (DATA_DIR, etc.) then run::
 
-- you can then plot the selected vertices that are recorded in the .txt file
+    python STEP0_seed_vertex_selection.py
 
-@author: lauracarlton
+Inputs
+------
+- Forward model file (Adot.nc) containing the cortical mesh and sensitivity
+  matrix located in <DATA_DIR>/derivatives/cedalion/fw/ICBM152/
+
+Configurables (defaults shown)
+-----------------------------
+- DATA_DIR (str): 
+    - Root directory containing forward model data.
+- N_SEEDS (int): varies by use case
+    - Number of seed vertices to select for simulation.
+
+Outputs
+-------
+- Selected seed vertex indices saved to a text or pickle file for use in
+  subsequent simulation steps (FIG5&6_STEP1).
+
+Dependencies
+------------
+- cedalion, xarray, numpy, matplotlib, pyvista
+
+Author: Laura Carlton
 """
 #%%
 from __future__ import annotations

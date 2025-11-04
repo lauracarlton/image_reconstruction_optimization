@@ -1,23 +1,81 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-For a given set of image recon parameters
-- get the metrics on the subject average at each vertex
-- specify the root directory, size the of the blob, scale of the HRF, list of seed vertices
+single_wl_metrics_batch_aug.py
 
-Steps for user:
-before submitting the batch job, configure the following parameters:
-    - ROOT_DIR: should point to a BIDs data folder
-    - HEAD_MODEL: which atlas to use - options in cedalion are Colin27 and ICBM152
-    - GLM_METHOD: which solving method was used in preprocessing of augmented data - ols or ar_irls
-    - TASK: which of the tasks in the BIDS dataset was augmented 
-    - BLOB_SIGMA: the standard deviation of the Gaussian blob of activation (mm)
-    - SCALE_FACTOR: the amplitude of the maximum change in 850nm OD in channel space
-    - WL_IDX: index of the wavelength to use for the single wavelength simulation
-    - VERTEX_LIST: list of seed vertices to be used 
-    - exclude_subj: any subjects IDs within the BIDs dataset to be excluded
+Batch processing script for single-wavelength augmented simulation metrics. This
+module is designed to be called by a batch job scheduler (e.g., SGE, SLURM) to
+compute image reconstruction metrics for a single parameter combination. It
+generates synthetic single-wavelength fNIRS measurements, performs image
+reconstruction, and computes quality metrics.
 
-@author: lcarlton
+Usage
+-----
+This script is typically called by STEP2_submit_single_wl_aug_batch_job.py via a
+batch scheduler with command-line arguments::
+
+    python single_wl_metrics_batch_aug.py <alpha_meas> <alpha_spatial> <sigma_brain> <sigma_scalp>
+
+Command-line Arguments
+----------------------
+- alpha_meas (float): Measurement regularization parameter value.
+- alpha_spatial (float): Spatial regularization parameter value.
+- sigma_brain (float): Brain spatial basis function width in mm.
+- sigma_scalp (float): Scalp spatial basis function width in mm.
+
+Configurables (defaults shown)
+-----------------------------
+Data Storage Parameters:
+- ROOT_DIR (str): '/projectnb/nphfnirs/s/datasets/BSMW_Laura_Miray_2025/BS_bids'
+    - Root directory containing forward model and variance data.
+- EXCLUDED (list[str]): ['sub-577']
+    - Subject IDs to skip during processing.
+
+Head Model Parameters:
+- HEAD_MODEL (str): 'ICBM152'
+    - Head model used for forward modeling (options: 'Colin27', 'ICBM152').
+
+GLM Parameters:
+- NOISE_MODEL (str): 'ols'
+    - GLM method used in variance estimation step (options: 'ols', 'ar_irls').
+- TASK (str): 'RS'
+    - Task identifier matching the variance estimation dataset.
+
+HRF Parameters:
+- BLOB_SIGMA (pint Quantity): 15 * units.mm
+    - Standard deviation of the Gaussian used for spatial activation blob.
+- SCALE_FACTOR (float): 0.02
+    - Amplitude of synthetic activation in optical density units.
+- VERTEX_LIST (list[int]): [10089, 10453, 14673, 11323, 13685, 11702, 8337]
+    - List of seed vertex indices for synthetic activation generation.
+
+Wavelength Parameters:
+- WL_IDX (int): 1
+    - Wavelength index for single-wavelength simulation (0=760nm, 1=850nm).
+
+Fixed Parameters:
+- mask_threshold (float): -2
+    - Log of sensitivity threshold for creating brain/scalp mask.
+
+Outputs
+-------
+- Individual pickle file saved to <ROOT_DIR>/derivatives/cedalion/augmented_data/batch_results/
+  with filename: COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_sb-{sigma_brain}_ss-{sigma_scalp}_am-{alpha_meas}_as-{alpha_spatial}_{GLM_METHOD}_single_wl.pkl
+  containing dictionary with metrics:
+  - FWHM: Full width at half maximum of reconstructed activation
+  - CNR: Contrast-to-noise ratio
+  - crosstalk_brainVscalp: Brain vs scalp crosstalk measure
+  - localization_error: Distance between true and reconstructed peak
+  - perc_recon_brain: Percentage of signal reconstructed in brain
+  - perc_recon_scalp: Percentage of signal reconstructed in scalp
+  - contrast_ratio: Ratio of reconstructed to expected contrast
+
+Dependencies
+------------
+- cedalion, xarray, numpy, scipy, pickle, sys, modules/image_recon_func,
+  modules/get_image_metrics, modules/spatial_basis_funs
+
+Author: Laura Carlton
 """
 
 #---------------------------------------------------
@@ -45,13 +103,13 @@ warnings.filterwarnings('ignore')
 #%% SETUP CONFIGS
 ROOT_DIR = os.path.join('/projectnb', 'nphfnirs', 's', 'datasets', 'BSMW_Laura_Miray_2025', 'BS_bids')
 HEAD_MODEL = 'ICBM152'
-GLM_METHOD = 'ols'
+NOISE_MODEL = 'ols'
 TASK = 'RS'
 BLOB_SIGMA = 15 * units.mm
 SCALE_FACTOR = 0.02
 WL_IDX = 1
 VERTEX_LIST = [10089, 10453, 14673, 11323, 13685, 11702, 8337]
-exclude_subj = ['sub-577']
+EXCLUDED = ['sub-577']
 
 #%% SETUP DOWNSTREAM CONFIGS
 CMEAS_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'augmented_data')
@@ -63,7 +121,7 @@ os.makedirs(SAVE_DIR, exist_ok=True)
 mask_threshold = -2
 
 dirs = os.listdir(ROOT_DIR)
-subject_list = [d for d in dirs if 'sub' in d and d not in exclude_subj]
+subject_list = [d for d in dirs if 'sub' in d and d not in EXCLUDED]
 
 #%% GET INPUTS
 alpha_meas = float(sys.argv[1])
@@ -91,7 +149,7 @@ A_fw = Adot.isel(wavelength = 1)
 nV_brain = A_fw.is_brain.sum().values
 
 #%% LOAD IN CMEAS
-with open(os.path.join(CMEAS_DIR, f"C_meas_subj_task-{TASK}_blob-{BLOB_SIGMA.magnitude}mm_scale-{SCALE_FACTOR}_{GLM_METHOD}.pkl"), 'rb') as f:
+with open(os.path.join(CMEAS_DIR, f"C_meas_subj_task-{TASK}_blob-{BLOB_SIGMA.magnitude}mm_scale-{SCALE_FACTOR}_{NOISE_MODEL}.pkl"), 'rb') as f:
     C_meas_list = pickle.load(f)
     
 #%% GET THE METRICS FOR ALL VERTICES
@@ -281,7 +339,7 @@ RESULTS = {'FWHM': FWHM,
            'contrast_ratio': contrast_ratio
     }
 
-with open(os.path.join(SAVE_DIR, f'COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA.magnitude}mm_scale-{SCALE_FACTOR}_sb-{sigma_brain}_ss-{sigma_scalp}_am-{alpha_meas}_as-{alpha_spatial}_{GLM_METHOD}_single_wl.pkl'), 'wb') as f:
+with open(os.path.join(SAVE_DIR, f'COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA.magnitude}mm_scale-{SCALE_FACTOR}_sb-{sigma_brain}_ss-{sigma_scalp}_am-{alpha_meas}_as-{alpha_spatial}_{NOISE_MODEL}_single_wl.pkl'), 'wb') as f:
     pickle.dump(RESULTS, f)
  
 print('Job Complete.')

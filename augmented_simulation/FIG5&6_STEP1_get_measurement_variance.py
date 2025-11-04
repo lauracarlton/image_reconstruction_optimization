@@ -1,44 +1,88 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Use this script to generate C_meas that is used downstream to get image metrics used in 
-"Surface-Based Image Reconstruction Optimization for High-Density Functional Near Infrared Spectroscopy"
+FIG5&6_STEP1_get_measurement_variance.py
 
-In this script: 
-- load in a dataset
-- for each run of each subject:
-    - basic preprocessing 
-        - identify noisy channels
-        - convert intensity to OD
-        - add synthetic HRF to timeseries 
-        - optional -> motion correction using TDDR
-        - optional -> lowpass filter at 0.5 Hz
-        - convert OD to concentration 
-- for each subject
-    - concatenate runs and perform HRF estimation 
-        - use AR-IRLS or OLS
-        - 3rd order drift correction 
-        - physiological regression using mean of the 19 mm channels
-- save the covariance matrix output 
+Measurement variance estimation for augmented simulations. This script processes a BIDS formatted fNIRS dataset
+and by augmenting data with a synthetic HRF and estimating the measurement variance using a GLM approach.
 
-configure the following parameters:
-    - ROOT_DIR: should point to a BIDs data folder
-    - HEAD_MODEL: which atlas to use - options in cedalion are Colin27 and ICBM152
-    - GLM_METHOD: which solving method was used in preprocessing of augmented data - ols or ar_irls
-    - TASK: which of the tasks in the BIDS dataset was augmented 
-    - BLOB_SIGMA: the standard deviation of the Gaussian blob of activation (mm) * MUST HAVE UNITS *
-    - SCALE_FACTOR: the amplitude of the maximum change in 850nm OD in channel space
-    - VERTEX_LIST: list of seed vertices to be used 
-    - exclude_subj: any subjects IDs within the BIDs dataset to be excluded
-    - TRANGE_HRF: temporal window used to define the HRF
-    - STIM_DUR: length of the boxcar function that is convolved with the HRF 
-    - T_WIN: window over which to average the peak of the HRF
-    - PARAMS_BASIS: parameters used for tau and sigma to define the canonical HRF using a modified gamma function for both HbO and HbR
-    - SNR_THRESH: threshold for defining channels with bad SNR
-    - DRANGE: threshold for defining low amplitude and saturated channels
-    
+Usage
+-----
+Edit the CONFIG section (ROOT_DIR, NOISE_MODEL, etc.) then run::
 
-@author: lcarlton
+    python FIG5&6_STEP1_get_measurement_variance.py
+
+Inputs
+------
+- A BIDS-like folder structure under ROOT_DIR containing subject folders with
+  a `nirs` subfolder and SNIRF files.
+- Forward model file (Adot.nc) for channel selection and sensitivity matrix.
+
+Configurables (defaults shown)
+-----------------------------
+Data Storage Parameters:
+- ROOT_DIR (str): 
+    - Root dataset path pointing to BIDS directory containing subject folders.
+- EXCLUDED (list[str]): ['sub-577']
+    - Subject IDs to skip during processing.
+- TASK (str): 'RS'
+    - Task identifier used to build file IDs.
+
+Head Model Parameters:
+- HEAD_MODEL (str): 'ICBM152'
+    - Head model used.
+- VERTEX_LIST (list[int]): [10089, 10453, 14673, 11323, 13685, 11702, 8337]
+    - List of seed vertex indices for synthetic activation generation.
+
+HRF Parameters:
+- BLOB_SIGMA (pint Quantity): 15 * units.mm
+    - Standard deviation of the Gaussian used for spatial activation blob.
+- TRANGE_HRF (list[float]): [0, 15]
+    - Temporal window in seconds used to define the HRF.
+- STIM_DUR (float): 5
+    - Length in seconds of the boxcar function to convolve with canonical HRF.
+- SCALE_FACTOR (float): 0.02
+    - Scale for the HRF in OD - becomes the maximum OD in the larger wavelength index.
+- T_WIN (list[float]): [4, 7]
+    - Window in seconds over which to average the peak of the HRF.
+- PARAMS_BASIS (list[float]): [0.1000, 3.0000, 1.8000, 3.0000]
+    - Parameters for tau and sigma for the modified gamma function for each chromophore.
+
+Preprocessing Parameters:
+- NOISE_MODEL (str): 'ols'  # supported: 'ols', 'ar_irls'
+    - Noise model type for GLM fitting. Controls preprocessing pipeline.
+- D_RANGE (list[float]): [1e-3, 0.84]
+    - Mean signal amplitude minimum and maximum for channel flagging.
+- SNR_THRESH (float): 5
+    - Signal-to-noise ratio threshold for channel quality control.
+
+GLM Configuration (constructed from NOISE_MODEL):
+- cfg_GLM (dict): keys set automatically from NOISE_MODEL:
+    - do_drift (bool), do_drift_legendre (bool), do_short_sep (bool),
+      drift_order (int), distance_threshold (pint length), short_channel_method (str),
+      noise_model (str), t_delta/t_std/t_pre/t_post (pint time values)
+
+MSE Configuration:
+- cfg_mse (dict): values used to detect/flag bad channels by MSE and amplitude:
+    - mse_val_for_bad_data: 1e1
+    - mse_amp_thresh: 1e-3 * units.V
+    - blockaverage_val: 0
+    - mse_min_thresh: 1e-6
+
+Outputs
+-------
+- Variance estimates (C_meas) saved as gzipped pickle file under
+  <ROOT_DIR>/derivatives/cedalion/augmented_data/ with filename:
+  C_meas_subj_task-{TASK}_blob-{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_{GLM_METHOD}.pkl
+  Contains measurement variance estimates for use in generating synthetic 
+  measurements with realistic noise profiles.
+
+Dependencies
+------------
+- cedalion, xarray, numpy, pandas, matplotlib, gzip, pickle, modules/image_recon_func,
+  modules/get_image_metrics, modules/spatial_basis_funs
+
+Author: Laura Carlton
 """
 #---------------------------------------------------
 #%% IMPORT MODULES
@@ -67,7 +111,7 @@ warnings.filterwarnings('ignore')
 #%% CONFIG 
 # DATA STORAGE PARAMS
 ROOT_DIR = os.path.join('/projectnb', 'nphfnirs', 's', 'datasets', 'BSMW_Laura_Miray_2025', 'BS_bids')
-exclude_subj = ['sub-577']
+EXCLUDED = ['sub-577']
 TASK = "RS"
 
 # HEAD PARAMS
@@ -85,7 +129,7 @@ PARAMS_BASIS  = [0.1000, 3.0000, 1.8000, 3.0000] # Parameters for tau and sigma 
 
 
 # PREPROCESSING PARAMS
-GLM_METHOD = 'ols' # can select ols for ordinary least squares or ar_irls for autoregressive model
+NOISE_MODEL = 'ols' # can select ols for ordinary least squares or ar_irls for autoregressive model
 # channel flagging params
 D_RANGE = [1e-3, 0.84] # mean signal amplitude min and max
 SNR_THRESH = 5 # signal to noise ratio threshold
@@ -97,16 +141,16 @@ os.makedirs(SAVE_DIR, exist_ok=True)
 PROBE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'fw', HEAD_MODEL)
 
 dirs = os.listdir(ROOT_DIR)
-SUBJECT_LIST = [d for d in dirs if 'sub' in d and d not in exclude_subj]
+SUBJECT_LIST = [d for d in dirs if 'sub' in d and d not in EXCLUDED]
 
 cmap = plt.cm.get_cmap("jet", 256)
 
-if GLM_METHOD == 'ols':
+if NOISE_MODEL == 'ols':
     DO_TDDR = True
     DO_DRIFT = True
     DO_DRIFT_LEGENDRE = False
     DRIFT_ORDER = 3
-elif GLM_METHOD == 'ar_irls':
+elif NOISE_MODEL == 'ar_irls':
     DO_TDDR = False
     DO_DRIFT = False
     DO_DRIFT_LEGENDRE = True
@@ -121,7 +165,7 @@ cfg_GLM = {
     'drift_order' : DRIFT_ORDER,
     'distance_threshold' : 20*units.mm, # for ssr
     'short_channel_method' : 'mean',
-    'noise_model' : GLM_METHOD,
+    'noise_model' : NOISE_MODEL,
     't_delta' : 1*units.s ,   # for seq of Gauss basis func - the temporal spacing between consecutive gaussians
     't_std' : 1*units.s ,  
     't_pre' : 2*units.s,

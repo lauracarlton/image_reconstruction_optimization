@@ -1,24 +1,74 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Use this script to generate the images that are included in Figure 6 of 
-"Surface-Based Image Reconstruction Optimization for High-Density Functional Near Infrared Spectroscopy"
+FIG6_generate_figure.py
 
-Configurables:
-- ROOT_DIR: path to your bids dataset
-- BLOB_SIGMA: the standard deviation of the Gaussian blob of activation (mm)
-- TASK: which of the tasks in the BIDS dataset was augmented 
-- SCALE_FACTOR: the amplitude of the maximum change in 850nm OD in channel space
-- GLM_METHOD: which solving method was used in preprocessing of augmented data - ols or ar_irls
-- alpha_spatial_sb: the value of alpha_spatial desired for plotting the metrics using spatial basis functions
-- alpha_spatial_nosb: the value of alpha_spatial desired for plotting the metrics using no spatial basis functions
-- sigma_brain: value of sigma brain to use for plotting 
-- sigma_scalp: value of sigma scalp to use for plottin 
+Figure generation for dual-wavelength augmented simulation results. This
+module loads the dual-wavelength image reconstruction metrics computed in
+FIG6_STEP2 and creates publication-quality visualizations comparing HbO and
+HbR reconstruction quality across regularization parameters for both direct
+and indirect reconstruction methods.
 
-Output: 
-- Figure saved showing all the metrics for both the direct and indirect methods and with and without spatial bses methods across the range of alpha_meas provided
+Usage
+-----
+Edit the CONFIG section (ROOT_DIR, BLOB_SIGMA, TASK, etc.) then run::
 
-@author: lcarlton
+    python FIG6_generate_figure.py
+
+Inputs
+------
+- Gzipped pickle file from FIG6_STEP2_get_dual_wavelength_image_metrics.py
+  located at <ROOT_DIR>/derivatives/cedalion/augmented_data/ with filename:
+  COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_dual_wl_{GLM_METHOD}.pkl
+  containing dual-wavelength reconstruction metrics for various alpha_meas,
+  alpha_spatial, sigma_brain, sigma_scalp values, and seed vertex configurations.
+
+Configurables (defaults shown)
+-----------------------------
+Data Storage Parameters:
+- ROOT_DIR (str): '/projectnb/nphfnirs/s/datasets/BSMW_Laura_Miray_2025/BS_bids'
+    - Root directory containing simulation results.
+
+Augmentation Parameters (must match STEP2):
+- BLOB_SIGMA (float): 15
+    - Standard deviation of Gaussian activation blob in mm.
+- TASK (str): 'RS'
+    - Task identifier matching the augmented dataset.
+- SCALE_FACTOR (float): 0.02
+    - Amplitude of the maximum change in 850nm OD in channel space.
+- NOISE_MODEL (str): 'ols'
+    - GLM solving method used in preprocessing of augmented data (ols or ar_irls).
+
+Plotting Parameters:
+- alpha_spatial_sb (float): 1e-2
+    - Value of alpha_spatial for plotting metrics using spatial basis functions.
+- alpha_spatial_nosb (float): 1e-3
+    - Value of alpha_spatial for plotting metrics without spatial basis functions.
+- sigma_brain (int): 1
+    - Value of sigma_brain (mm) to use for spatial basis function plotting.
+- sigma_scalp (int): 5
+    - Value of sigma_scalp (mm) to use for spatial basis function plotting.
+
+Outputs
+-------
+- Publication-ready figure (Figure 6) saved to <ROOT_DIR>/derivatives/cedalion/figures/
+  with filename: FIG6_augRS_dual_wl_assb-{alpha_spatial_sb}_asnosb-{alpha_spatial_nosb}_{GLM_METHOD}.png
+  showing 7 panels:
+  - FWHM HbO vs alpha_meas
+  - CNR HbO vs alpha_meas
+  - Contrast ratio HbO vs alpha_meas
+  - Localization error HbO vs alpha_meas
+  - Brain→Scalp crosstalk HbO vs alpha_meas (log scale)
+  - HbO→HbR crosstalk vs alpha_meas
+  - HbR→HbO crosstalk vs alpha_meas
+  Each panel shows direct method (solid line) and indirect method (dashed line)
+  for both spatial basis and no-spatial-basis conditions.
+
+Dependencies
+------------
+- numpy, matplotlib, seaborn, pickle
+
+Author: Laura Carlton
 """
 
 #%% IMPORTS
@@ -36,7 +86,7 @@ ROOT_DIR = os.path.join('/projectnb', 'nphfnirs', 's', 'datasets', 'BSMW_Laura_M
 
 BLOB_SIGMA = 15
 SCALE_FACTOR = 0.02
-GLM_METHOD = 'ols'
+NOISE_MODEL = 'ols'
 TASK = 'RS'
 
 alpha_spatial_sb = 1e-2
@@ -50,7 +100,7 @@ SAVE_PLOT = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'figures')
 
 os.makedirs(SAVE_PLOT, exist_ok=True)
 
-with open(os.path.join(SAVE_DIR, f'COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_dual_wl_{GLM_METHOD}.pkl'), 'rb') as f:
+with open(os.path.join(SAVE_DIR, f'COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_dual_wl_{NOISE_MODEL}.pkl'), 'rb') as f:
     RESULTS = pickle.load(f)
 
 alpha_meas_list = RESULTS['FWHM_HbO_direct'].alpha_meas.values
@@ -139,7 +189,7 @@ handles, labels = axes[0].get_legend_handles_labels()
 legend_ax.legend(handles, labels, loc='center', ncol=1)
 
 plt.tight_layout()
-plt.savefig(os.path.join(SAVE_PLOT, f'FIG6_augRS_dual_wl_assb-{alpha_spatial_sb}_asnosb-{alpha_spatial_nosb}_{GLM_METHOD}.png'), dpi=300)
+plt.savefig(os.path.join(SAVE_PLOT, f'FIG6_augRS_dual_wl_assb-{alpha_spatial_sb}_asnosb-{alpha_spatial_nosb}_{NOISE_MODEL}.png'), dpi=300)
 plt.show()
 
 # %%

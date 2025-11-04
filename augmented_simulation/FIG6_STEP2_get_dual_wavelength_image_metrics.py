@@ -1,31 +1,91 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Use this script to generate the metrics used downstream to generate the Figure 6 of 
-"Surface-Based Image Reconstruction Optimization for High-Density Functional Near Infrared Spectroscopy"
+FIG6_STEP2_get_dual_wavelength_image_metrics.py
 
-For a given set of image recon parameters
-- get the metrics on the subject average at each vertex
-- specify the root directory, size the of the blob, scale of the HRF, list of seed vertices
+Dual-wavelength augmented simulation and image reconstruction metrics. This
+module generates synthetic fNIRS measurements at both 760nm and 850nm
+wavelengths with known ground truth HbO/HbR activations, performs image
+reconstruction with various regularization parameters, using both the direct
+and indirect methods and computes quantitative metrics to evaluate 
+reconstruction quality.
 
-Steps for user:
-configure the following parameters:
-    - ROOT_DIR: should point to a BIDs data folder
-    - HEAD_MODEL: which atlas to use - options in cedalion are Colin27 and ICBM152
-    - GLM_METHOD: which solving method was used in preprocessing of augmented data - ols or ar_irls
-    - TASK: which of the tasks in the BIDS dataset was augmented 
-    - BLOB_SIGMA: the standard deviation of the Gaussian blob of activation (mm) * MUST HAVE UNITS *
-    - SCALE_FACTOR: the amplitude of the maximum change in 850nm OD in channel space
-    - VERTEX_LIST: list of seed vertices to be used 
-    - exclude_subj: any subjects IDs within the BIDs dataset to be excluded
-    
-choose the image recon parameters to test 
-- alpha_meas_list: select range of alpha measurement
-- alpha_spatial_list: select range of alpha spatial 
-- sigma_brain_list: select range of sigma brain 
-- sigma_scalp_list: select range of sigma scalp 
+Usage
+-----
+Edit the CONFIG section (ROOT_DIR, VERTEX_LIST, alpha_meas_list, etc.) then run::
 
-@author: lcarlton
+    python FIG6_STEP2_get_dual_wavelength_image_metrics.py
+
+Inputs
+------
+- Forward model file (Adot.nc) containing dual-wavelength sensitivity matrix.
+- Measurement variance estimates (C_meas) from FIG5&6_STEP1.
+- Seed vertex indices for generating synthetic activations.
+
+Configurables (defaults shown)
+-----------------------------
+Data Storage Parameters:
+- ROOT_DIR (str): 
+    - Root directory containing forward model and variance data.
+- EXCLUDED (list[str]): ['sub-577']
+    - Subject IDs to skip during processing.
+
+Head Model Parameters:
+- HEAD_MODEL (str): 'ICBM152'
+    - Head model used for forward modeling.
+- MASK_THRESHOLD (float): -2
+    - Log of sensitivity threshold for creating brain/scalp mask.
+
+HRF Parameters:
+- VERTEX_LIST (list[int]): [10089, 10453, 14673, 11323, 13685, 11702, 8337]
+    - List of seed vertex indices for synthetic activation generation.
+- BLOB_SIGMA (pint Quantity): 15 * units.mm
+    - Standard deviation of the Gaussian used for spatial activation blob.
+- SCALE_FACTOR (float): 0.02
+    - Amplitude of synthetic activation in optical density units.
+
+GLM Parameters:
+- NOISE_MODEL (str): 'ols'
+    - GLM method used in variance estimation step.
+- TASK (str): 'RS'
+    - Task identifier matching the variance estimation dataset.
+
+Wavelength Parameters:
+- WL_IDX (int): 1
+    - Wavelength index used for mask generation.
+- CHROMO_LIST (list[str]): ['HbO', 'HbR']
+    - Chromophores to reconstruct and evaluate.
+
+Image Reconstruction Parameters to Test:
+- alpha_meas_list (list[float]): [1e-4, 1, 1e4]
+    - Range of measurement regularization parameters to sweep.
+- alpha_spatial_list (list[float]): [1e-2, 1e-3]
+    - Range of spatial regularization parameters to sweep.
+- sigma_brain_list (list[pint Quantity]): [0, 1] * units.mm
+    - Range of brain spatial basis function widths to test.
+- sigma_scalp_list (list[pint Quantity]): [0, 5] * units.mm
+    - Range of scalp spatial basis function widths to test.
+
+Outputs
+-------
+- Gzipped pickle file saved to <ROOT_DIR>/derivatives/cedalion/augmented_data/ with filename:
+  COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_{NOISE_MODEL}_dual_wl.pkl
+  containing dictionary with the following metrics indexed by 
+  [alpha_meas, alpha_spatial, sigma_brain, sigma_scalp, vertex]:
+  - crosstalk_HbOVHbR_direct/indirect: HbO-to-HbR crosstalk ratio
+  - crosstalk_HbRVHbO_direct/indirect: HbR-to-HbO crosstalk ratio
+  - CNR_HbO_direct/indirect: Contrast-to-noise ratio for HbO
+  - FWHM_HbO_direct/indirect: Full width at half maximum of HbO activation
+  - localization_error_HbO_direct/indirect: Distance between true and reconstructed peak
+  - crosstalk_brainVscalp_HbO_direct/indirect: Brain vs scalp crosstalk
+  - contrast_ratio_HbO_direct/indirect: Ratio of reconstructed to expected contrast
+
+Dependencies
+------------
+- cedalion, xarray, numpy, scipy, pickle, modules/image_recon_func,
+  modules/get_image_metrics, modules/spatial_basis_funs
+
+Author: Laura Carlton
 """
 #---------------------------------------------------
 #%% IMPORT MODULES
@@ -52,12 +112,12 @@ warnings.filterwarnings('ignore')
 #%% SETUP CONFIGS
 ROOT_DIR = os.path.join('/projectnb', 'nphfnirs', 's', 'datasets', 'BSMW_Laura_Miray_2025', 'BS_bids')
 HEAD_MODEL = 'ICBM152'
-GLM_METHOD = 'ols'
+NOISE_MODEL = 'ols'
 TASK = 'RS'
 BLOB_SIGMA = 15 * units.mm
 SCALE_FACTOR = 0.02
 VERTEX_LIST = [10089, 10453, 14673, 11323, 13685, 11702, 8337]
-exclude_subj = ['sub-577']
+EXCLUDED = ['sub-577']
 
 # IMAGE RECON PARAMS TO TEST 
 alpha_meas_list = [1e-4, 1, 1e4] 
@@ -76,7 +136,7 @@ mask_threshold = -2
 chromo_list = ['HbO', 'HbR']
 
 dirs = os.listdir(ROOT_DIR)
-subject_list = [d for d in dirs if 'sub' in d and d not in exclude_subj]
+subject_list = [d for d in dirs if 'sub' in d and d not in EXCLUDED]
 
 #%% LOAD DATA
 head, parcel_dir = irf.load_head_model(with_parcels=False)
@@ -95,7 +155,7 @@ ec = nirs.get_extinction_coefficients("prahl", Adot.wavelength)
 einv = xrutils.pinv(ec)
 
 #%% GET THE IMAGE METRICS 
-with open(os.path.join(SAVE_DIR, f"C_meas_subj_task-{TASK}_blob-{BLOB_SIGMA.magnitude}mm_scale-{SCALE_FACTOR}_{GLM_METHOD}.pkl"), 'rb') as f:
+with open(os.path.join(SAVE_DIR, f"C_meas_subj_task-{TASK}_blob-{BLOB_SIGMA.magnitude}mm_scale-{SCALE_FACTOR}_{NOISE_MODEL}.pkl"), 'rb') as f:
     C_meas_list = pickle.load(f)
     
 #%% GET THE METRICS FOR ALL VERTICES
@@ -439,5 +499,5 @@ RESULTS = {
            'contrast_ratio_HbO_indirect': contrast_ratio_HbO_indirect
     }
 
-with open(os.path.join(SAVE_DIR, f'COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA.magnitude}mm_scale-{SCALE_FACTOR}_{GLM_METHOD}_dual_wl.pkl', 'wb') as f:
+with open(os.path.join(SAVE_DIR, f'COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA.magnitude}mm_scale-{SCALE_FACTOR}_{NOISE_MODEL}_dual_wl.pkl'), 'wb') as f:
     pickle.dump(RESULTS, f)

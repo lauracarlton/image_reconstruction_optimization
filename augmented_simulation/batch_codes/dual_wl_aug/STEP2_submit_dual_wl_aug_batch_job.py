@@ -1,19 +1,57 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Submit the batch jobs using this python script.
-Ensure the path to the shell script matches your directory structure
-Specify the image recon parameters you want to test
-Configurables: 
-- CODE_DIR: the directory where all the code from the git repository is held 
-    
-choose the image recon parameters to test 
-- alpha_meas_list: select range of alpha measurement
-- alpha_spatial_list: select range of alpha spatial 
-- sigma_brain_list: select range of sigma brain 
-- sigma_scalp_list: select range of sigma scalp 
+STEP2_submit_dual_wl_aug_batch_job.py
 
-@author: lcarlton
+Batch job submission script for dual-wavelength augmented simulations. This
+module generates and submits batch jobs to a cluster scheduler (SGE) to
+parallelize the computation of image reconstruction metrics across multiple
+parameter combinations (alpha_meas, alpha_spatial, sigma_brain, sigma_scalp).
+
+Usage
+-----
+Edit the CONFIG section (CODE_DIR, alpha_meas_list, etc.) then run::
+
+    python STEP2_submit_dual_wl_aug_batch_job.py
+
+Inputs
+------
+- dual_wl_metrics_batch_aug.py: The worker script to be executed by each batch job.
+- batch_shell_script_dual_wl_aug.sh: Shell script template for SGE batch submission.
+
+Configurables (defaults shown)
+-----------------------------
+Directory Parameters:
+- CODE_DIR (str): '/projectnb/nphfnirs/s/users/lcarlton/ANALYSIS_CODE/imaging_paper_figure_code/augmented_simulation/batch_codes/dual_wl_aug'
+    - Directory containing the batch worker script and shell script.
+
+Image Reconstruction Parameters to Test:
+- alpha_meas_list (list[float]): [10 ** i for i in range(-6, 6)]
+    - Range of measurement regularization parameters to sweep (0.1, 1, 10, 100).
+- alpha_spatial_list (list[float]): [1e-3, 1e-2]
+    - Range of spatial regularization parameters to sweep.
+- sigma_brain_list (list[int]): [0, 1, 3, 5]
+    - Range of brain spatial basis function widths to test (mm).
+- sigma_scalp_list (list[int]): [0, 1, 5, 10, 20]
+    - Range of scalp spatial basis function widths to test (mm).
+
+Job Submission Logic:
+- Skips invalid combinations where sigma_brain=0 and sigma_scalp!=0, or vice versa.
+- Submits one job per valid parameter combination using qsub (SGE).
+
+Outputs
+-------
+- Submits batch jobs to SGE cluster scheduler via qsub command.
+- Each job executes dual_wl_metrics_batch_aug.py with specific parameter values.
+- Number of jobs submitted = len(alpha_meas_list) x len(alpha_spatial_list) x
+  len(valid sigma combinations).
+- Job output and error logs are controlled by batch_shell_script_dual_wl_aug.sh.
+
+Dependencies
+------------
+- subprocess
+
+Author: Laura Carlton
 """
 
 import subprocess
