@@ -44,7 +44,7 @@ import subprocess
 
 # --------------------- CONFIG ---------------------
 ROOT_DIR = os.path.join("/projectnb", "nphfnirs", "s", "datasets", "BSMW_Laura_Miray_2025", "BS_bids")
-EXCLUDED = ["sub-538", "sub-549", "sub-547"]
+EXCLUDED = []
 SHELL_SCRIPT = os.path.join(
     "/projectnb",
     "nphfnirs",
@@ -65,5 +65,4 @@ subject_list = [d for d in dirs if "sub" in d and d not in EXCLUDED]
 
 for subj in subject_list:
     qsub_command = f"qsub {SHELL_SCRIPT} {subj}"
-    print("Submitting:", qsub_command)
     subprocess.run(qsub_command, shell=True)

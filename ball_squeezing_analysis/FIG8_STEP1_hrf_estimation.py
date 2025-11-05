@@ -105,9 +105,9 @@ RUN_PREPROCESS = True
 RUN_HRF_ESTIMATION = True
 SAVE_RESIDUAL = False
 NOISE_MODEL = "ols"
-TASK = "BS"
+TASK = "BS" 
 N_RUNS = 3
-EXCLUDED = ["sub-538", "sub-549", "sub-547"]
+EXCLUDED = []
 
 dirs = os.listdir(ROOT_DIR)
 subject_list = [d for d in dirs if "sub" in d and d not in EXCLUDED]
@@ -175,8 +175,6 @@ cfg_mse = {"mse_val_for_bad_data": 1e1, "mse_amp_thresh": 1e-3 * units.V, "block
 # %% RUN PREPROCESSING
 # make sure derivatives folders exist
 der_dir = os.path.join(cfg_dataset["root_dir"], "derivatives", "cedalion")
-os.makedirs(der_dir, exist_ok=True)
-der_dir = os.path.join(cfg_dataset["root_dir"], "derivatives", "cedalion", "plots")
 os.makedirs(der_dir, exist_ok=True)
 der_dir = os.path.join(cfg_dataset["root_dir"], "derivatives", "cedalion", "processed_data")
 os.makedirs(der_dir, exist_ok=True)

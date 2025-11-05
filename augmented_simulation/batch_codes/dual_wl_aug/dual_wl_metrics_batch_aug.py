@@ -94,7 +94,7 @@ import cedalion.sim.synthetic_hrf as synthetic_hrf
 from cedalion.io.forward_model import load_Adot
 
 sys.path.append('/projectnb/nphfnirs/s/users/lcarlton/ANALYSIS_CODE/imaging_paper_figure_code/modules/')
-import spatial_basis_funs as sbf
+import spatial_basis_func as sbf
 import image_recon_func as irf
 import get_image_metrics as gim  
 
@@ -125,14 +125,14 @@ dirs = os.listdir(ROOT_DIR)
 subject_list = [d for d in dirs if 'sub' in d and d not in EXCLUDED]
 
 #%% GET INPUTS
-# alpha_meas = float(sys.argv[1])
-# alpha_spatial = float(sys.argv[2])
-# sigma_brain = float(sys.argv[3])
-# sigma_scalp = float(sys.argv[4])
-alpha_meas = 0.1
-alpha_spatial = 0.01
-sigma_brain = 0.0
-sigma_scalp = 0.0
+alpha_meas = float(sys.argv[1])
+alpha_spatial = float(sys.argv[2])
+sigma_brain = float(sys.argv[3])
+sigma_scalp = float(sys.argv[4])
+# alpha_meas = 0.1
+# alpha_spatial = 0.01
+# sigma_brain = 0.0
+# sigma_scalp = 0.0
 
 print(f"Processing alpha_meas - {alpha_meas}, alpha_spatial - {alpha_spatial}, sigma_brain - {sigma_brain}, sigma_scalp - {sigma_scalp}") 
     
@@ -194,10 +194,9 @@ P_indirect = P_direct.copy()
 M = sbf.get_sensitivity_mask(Adot, mask_threshold, wl_idx)
 
 if sigma_brain > 0 and sigma_scalp > 0:
-    print(f'\tsigma brain = {sigma_brain}')
-    print(f'\tsigma scalp = {sigma_scalp}')
+    print(f'\tsigma brain = {sigma_brain}, sigma scalp = {sigma_scalp}')
 
-    G_brain_path = os.path.join(PROBE_DIR, f'/G_matrix_sigmabrain-{sigma_brain}.pkl')
+    G_brain_path = os.path.join(PROBE_DIR, f'G_matrix_sigmabrain-{sigma_brain}.pkl')
     if os.path.exists(G_brain_path):
         with open(G_brain_path, 'rb') as f:
             G_brain = pickle.load(f)
@@ -207,7 +206,7 @@ if sigma_brain > 0 and sigma_scalp > 0:
         with open(G_brain_path, 'wb') as f:
                 pickle.dump(G_brain, f)
 
-    G_scalp_path = os.path.join(PROBE_DIR, f'/G_matrix_sigmascalp-{sigma_scalp}.pkl')
+    G_scalp_path = os.path.join(PROBE_DIR, f'G_matrix_sigmascalp-{sigma_scalp}.pkl')
     if os.path.exists(G_scalp_path):
         with open(G_scalp_path, 'rb') as f:
             G_scalp = pickle.load(f)
@@ -492,7 +491,7 @@ RESULTS = {
            'crosstalk_brainVscalp_HbO_indirect': crosstalk_brainVscalp_HbO_indirect,
            }
   
-with open(os.path.join(SAVE_DIR, f'/COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA.magnitude}mm_scale-{SCALE_FACTOR}_sb-{sigma_brain}_ss-{sigma_scalp}_am-{alpha_meas}_as-{alpha_spatial}_{NOISE_MODEL}_dual_wl.pkl'), 'wb') as f:
+with open(os.path.join(SAVE_DIR, f'COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA.magnitude}mm_scale-{SCALE_FACTOR}_sb-{sigma_brain}_ss-{sigma_scalp}_am-{alpha_meas}_as-{alpha_spatial}_{NOISE_MODEL}_dual_wl.pkl'), 'wb') as f:
     pickle.dump(RESULTS, f)
  
 print('Job Complete.')

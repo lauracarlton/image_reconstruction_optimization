@@ -90,7 +90,7 @@ NOISE_MODEL = 'ols'
 TASK = 'RS'
 
 alpha_spatial_sb = 1e-2
-alpha_spatial_nosb = 1e-3
+alpha_spatial_nosb = 1e-2
 sigma_brain = 1
 sigma_scalp = 5
 
@@ -100,7 +100,7 @@ SAVE_PLOT = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'figures')
 
 os.makedirs(SAVE_PLOT, exist_ok=True)
 
-with open(os.path.join(SAVE_DIR, f'COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_dual_wl_{NOISE_MODEL}.pkl'), 'rb') as f:
+with open(os.path.join(SAVE_DIR, f'COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_{NOISE_MODEL}_dual_wl.pkl'), 'rb') as f:
     RESULTS = pickle.load(f)
 
 alpha_meas_list = RESULTS['FWHM_HbO_direct'].alpha_meas.values
@@ -189,7 +189,10 @@ handles, labels = axes[0].get_legend_handles_labels()
 legend_ax.legend(handles, labels, loc='center', ncol=1)
 
 plt.tight_layout()
-plt.savefig(os.path.join(SAVE_PLOT, f'FIG6_augRS_dual_wl_assb-{alpha_spatial_sb}_asnosb-{alpha_spatial_nosb}_{NOISE_MODEL}.png'), dpi=300)
+plt.savefig(
+    os.path.join(SAVE_PLOT, f'FIG6_task-{TASK}_blob-{BLOB_SIGMA}mm_assb-{alpha_spatial_sb}_asnosb-{alpha_spatial_nosb}_{NOISE_MODEL}_metrics_dual_wl.png'), 
+    dpi=300
+)
 plt.show()
 
 # %%

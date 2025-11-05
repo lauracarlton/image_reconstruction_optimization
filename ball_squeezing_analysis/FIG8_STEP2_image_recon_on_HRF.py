@@ -29,7 +29,7 @@ Usage
 Inputs
 ------
 - Root dataset folder containing per-subject `nirs` subfolders and STEP1
-    outputs located under `<ROOT_DIR>/derivatives/processed_data/<subject>/`.
+    outputs located under `<ROOT_DIR>/derivatives/cedalion/processed_data/<subject>/`.
 - Forward model `Adot.nc` in the PROBE_DIR used for sensitivity and masking.
 
 Configurables (defaults shown)
@@ -49,6 +49,9 @@ Configurables (defaults shown)
             keep time series (TS) when reconstructing.
 - T_WIN (list[int]): [5, 8]
         - Time window (seconds) used for computing magnitude when MAG flag is set.
+- HEAD_MODEL (str): 'ICBM152'
+    - head model used for generating sensitivity profile 
+- EXCLUDED (list): list of subjects to be exluded from analysis
 - cfg_mse (dict): keys for MSE masking and thresholds (see script for defaults).
 - cfg_list (list[dict]): Regularization configurations evaluated (alpha_meas,
     alpha_spatial, DIRECT, SB, sigma_brain, sigma_scalp).
@@ -89,12 +92,14 @@ warnings.filterwarnings("ignore")
 
 # %% set up config parameters
 ROOT_DIR = os.path.join("/projectnb", "nphfnirs", "s", "datasets", "BSMW_Laura_Miray_2025", "BS_bids")
-NOISE_MODEL = "ar_irls"
+NOISE_MODEL = "ols"
 TASK = "BS"
 REC_STR = "conc_o"
 CMEAS_FLAG = True
 MAG_TS_FLAG = "MAG"  # expected values: 'MAG' or 'TS' (case-sensitive in downstream checks)
 T_WIN = [5, 8]
+HEAD_MODEL = 'ICBM152'
+EXCLUDED = []
 
 cfg_list = [
     {"alpha_meas": 1e4, "alpha_spatial": 1e-3, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
@@ -106,13 +111,12 @@ cfg_list = [
 cfg_mse = {"mse_val_for_bad_data": 1e1, "mse_amp_thresh": 1e-3 * units.V, "blockaverage_val": 0, "mse_min_thresh": 1e-6}
 
 dirs = os.listdir(ROOT_DIR)
-excluded = ["sub-538", "sub-549", "sub-547"]
-subject_list = [d for d in dirs if "sub" in d and d not in excluded]
+subject_list = [d for d in dirs if "sub" in d and d not in EXCLUDED]
 
-PROBE_DIR = os.path.join(ROOT_DIR, "derivatives", "cedalion", "fw", "ICBM152")
+PROBE_DIR = os.path.join(ROOT_DIR, "derivatives", "cedalion", "fw", HEAD_MODEL)
 
 # %% load head model
-head, PARCEL_DIR = irf.load_head_model("ICBM152", with_parcels=True)
+head, PARCEL_DIR = irf.load_head_model(HEAD_MODEL, with_parcels=True)
 Adot = load_Adot(os.path.join(PROBE_DIR, "Adot.nc"))
 
 # %% run image recon
@@ -137,8 +141,7 @@ for cfg in cfg_list:
     alpha_spatial = cfg["alpha_spatial"]
 
     if os.path.exists(PROBE_DIR + f"G_matrix_sigmabrain-{float(sigma_brain)}.pkl") and os.path.exists(
-        PROBE_DIR + f"G_matrix_sigmascalp-{float(sigma_scalp)}.pkl"
-    ):
+        PROBE_DIR + f"G_matrix_sigmascalp-{float(sigma_scalp)}.pkl"):
         G_EXISTS = True
         with open(PROBE_DIR + f"G_matrix_sigmabrain-{float(sigma_brain)}.pkl", "rb") as f:
             G_brain = pickle.load(f)
@@ -172,12 +175,10 @@ for cfg in cfg_list:
 
     print(f"alpha_meas = {alpha_meas}, alpha_spatial = {alpha_spatial}, SB = {SB}, {direct_name}")
 
-    all_trial_X_hrf = None
-    all_trial_X_mse = None
-
     for subject in subject_list:
-
-        SAVE_DIR = os.path.join(ROOT_DIR, "derivatives", "processed_data", "image_space", subject)
+        all_trial_X_hrf = None
+        all_trial_X_mse = None
+        SAVE_DIR = os.path.join(ROOT_DIR, "derivatives", "cedalion", "processed_data", "image_space", subject)
         os.makedirs(SAVE_DIR, exist_ok=True)
 
         recordings = io.read_snirf(os.path.join(ROOT_DIR, subject, "nirs", f"{subject}_task-{TASK}_run-01_nirs.snirf"))
@@ -194,9 +195,10 @@ for cfg in cfg_list:
             os.path.join(
                 ROOT_DIR,
                 "derivatives",
+                "cedalion",
                 "processed_data",
                 subject,
-                f"{subject}_{REC_STR}_hrf_estimates_{NOISE_MODEL}.pkl.gz",
+                f"{subject}_task-{TASK}_{REC_STR}_hrf_estimates_{NOISE_MODEL}.pkl.gz"
             ),
             "rb",
         ) as f:
@@ -243,7 +245,7 @@ for cfg in cfg_list:
                 Adot=Adot,
                 C_meas_flag=CMEAS_FLAG,
                 C_meas=C_meas,
-                wavelength=[760, 850],
+                wavelength=Adot.wavelength,
                 BRAIN_ONLY=False,
                 DIRECT=DIRECT,
                 SB=SB,
@@ -276,23 +278,18 @@ for cfg in cfg_list:
             if all_trial_X_hrf is None:
 
                 all_trial_X_hrf = X_hrf
-                all_trial_X_hrf = all_trial_X_hrf.assign_coords(subject=subject)
                 all_trial_X_hrf = all_trial_X_hrf.assign_coords(trial_type=trial_type)
 
                 all_trial_X_mse = X_mse
-                all_trial_X_mse = all_trial_X_mse.assign_coords(subject=subject)
                 all_trial_X_mse = all_trial_X_mse.assign_coords(trial_type=trial_type)
 
             else:
 
-                X_hrf = X_hrf.assign_coords(subject=subject)
                 X_hrf = X_hrf.assign_coords(trial_type=trial_type)
-
-                X_mse_tmp = X_mse.assign_coords(subject=subject)
-                X_mse_tmp = X_mse_tmp.assign_coords(trial_type=trial_type)
+                X_mse = X_mse.assign_coords(trial_type=trial_type)
 
                 all_trial_X_hrf = xr.concat([all_trial_X_hrf, X_hrf], dim="trial_type")
-                all_trial_X_mse = xr.concat([all_trial_X_mse, X_mse_tmp], dim="trial_type")
+                all_trial_X_mse = xr.concat([all_trial_X_mse, X_mse], dim="trial_type")
 
         results = {"X_hrf": all_trial_X_hrf, "X_mse": all_trial_X_mse}
 

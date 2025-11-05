@@ -120,7 +120,8 @@ with gzip.open(
         "derivatives",
         "cedalion",
         "processed_data",
-        f"{subject}/{subject}_{REC_STR}_hrf_estimates_{NOISE_MODEL}.pkl.gz",
+        subject,
+        f"{subject}_task-{TASK}_{REC_STR}_hrf_estimates_{NOISE_MODEL}.pkl.gz",
     ),
     "rb",
 ) as f:

@@ -68,19 +68,19 @@ pv.set_jupyter_backend("static")
 
 # import my own functions from a different directory
 sys.path.append("/projectnb/nphfnirs/s/users/lcarlton/ANALYSIS_CODE/imaging_paper_figure_code/modules/")
-import spatial_basis_funs as sbf  # noqa: E402
+import spatial_basis_func as sbf  # noqa: E402
 import image_recon_func as irf  # noqa: E402
 
 # %% set up config parameters
 ROOT_DIR = os.path.join("/projectnb", "nphfnirs", "s", "datasets", "BSMW_Laura_Miray_2025", "BS_bids")
 REC_STR = "conc_o"
 TASK = "BS"
-NOISE_MODEL = "ar_irls"
+NOISE_MODEL = "ols"
 FNAME_FLAG = "mag"
 C_MEAS_FLAG = True
 PLOT_SAVE = False
 T_WIN = [5, 8]
-SPATIAL_SMOOTHING = True
+SPATIAL_SMOOTHING = False
 SIGMA_SMOOTHING = 50
 
 SCALE = 1
@@ -102,7 +102,7 @@ else:
     smoothing_name = ""
 
 DATA_DIR = os.path.join(ROOT_DIR, "derivatives", "cedalion", "processed_data", "image_space")
-SAVE_DIR = os.path.join(ROOT_DIR, "derivatives", "cedalion", "plots", "image_space")
+SAVE_DIR = os.path.join(ROOT_DIR, "derivatives", "cedalion", "figures", "image_space")
 
 os.makedirs(SAVE_DIR, exist_ok=True)
 
@@ -148,12 +148,12 @@ for cfg in cfg_list[:1]:
     if SB:
         filepath = os.path.join(
             DATA_DIR,
-            f"image_hrf_task-{TASK}_{FNAME_FLAG}_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_Cmeas_{NOISE_MODEL}{smoothing_name}.pkl.gz",
+            f"task-{TASK}_image_hrf_{FNAME_FLAG}_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_Cmeas_{NOISE_MODEL}{smoothing_name}.pkl.gz",
         )
     else:
         filepath = os.path.join(
             DATA_DIR,
-            f"image_hrf_task-{TASK}_{FNAME_FLAG}_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_{direct_name}_Cmeas_{NOISE_MODEL}{smoothing_name}.pkl.gz",
+            f"task-{TASK}_image_hrf_{FNAME_FLAG}_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_{direct_name}_Cmeas_{NOISE_MODEL}{smoothing_name}.pkl.gz",
         )
 
     with gzip.open(filepath, "rb") as f:

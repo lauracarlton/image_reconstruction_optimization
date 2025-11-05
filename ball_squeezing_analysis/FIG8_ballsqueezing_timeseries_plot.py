@@ -67,8 +67,8 @@ import cedalion.dataclasses as cdc
 from cedalion.io.forward_model import load_Adot
 
 sys.path.append("/projectnb/nphfnirs/s/users/lcarlton/ANALYSIS_CODE/imaging_paper_figure_code/modules/")
-import image_recon_func as irf  # noqa: E402
-import get_image_metrics as gim  # noqa: E402
+import image_recon_func as irf  
+import get_image_metrics as gim
 
 plt.rcParams["font.size"] = 50
 
@@ -79,18 +79,12 @@ TASK = "BS"
 FNAME_FLAG = "ts"
 SAVE = True
 PLOT_MASK = True
-ROI_SELECTION = "tstat"
+ROI_SELECTION = "mag"
 REC_STR = "conc_o"
 NOISE_MODEL = "ar_irls"
 
-# Backwards-compatible short names used in some filename templates elsewhere
-# (some scripts expect lowercase/legacy names). Define them here so templates
-# that reference them don't raise NameError during linting.
-ROI_selection = ROI_SELECTION
-glm_method = NOISE_MODEL
-
 DATA_DIR = os.path.join(ROOT_DIR, "derivatives", "cedalion", "processed_data", "image_space")
-SAVE_DIR = os.path.join(ROOT_DIR, "derivatives", "cedalion", "plots", "image_space")
+SAVE_DIR = os.path.join(ROOT_DIR, "derivatives", "cedalion", "figures", "image_space")
 PROBE_DIR = os.path.join(ROOT_DIR, "derivatives", "cedalion", "fw", "ICBM152")
 
 head, PARCEL_DIR = irf.load_head_model("ICBM152", with_parcels=False)
@@ -354,12 +348,12 @@ for cc, cfg in enumerate(cfg_list):
         if SB:
             filepath = os.path.join(
                 SAVE_DIR,
-                f"task-{TASK}_ts_plot_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_{Cmeas_name}_{trial_type.values}_roi-{ROI_selection}_{glm_method}-legdrift.png",
+                f"task-{TASK}_ts_plot_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_{Cmeas_name}_{trial_type.values}_roi-{ROI_SELECTION}_{NOISE_MODEL}.png",
             )
         else:
             filepath = os.path.join(
                 SAVE_DIR,
-                f"task-{TASK}_ts_plot_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_{direct_name}_{Cmeas_name}_{trial_type.values}_roi-{ROI_selection}_{glm_method}-legdrift.png",
+                f"task-{TASK}_ts_plot_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_{direct_name}_{Cmeas_name}_{trial_type.values}_roi-{ROI_SELECTION}_{NOISE_MODEL}.png",
             )
 
         plt.savefig(filepath, dpi=300)

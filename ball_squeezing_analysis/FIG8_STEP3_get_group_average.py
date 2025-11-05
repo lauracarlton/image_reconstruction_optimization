@@ -57,14 +57,14 @@ from cedalion.io.forward_model import load_Adot
 sys.path.append("/projectnb/nphfnirs/s/users/lcarlton/ANALYSIS_CODE/imaging_paper_figure_code/modules/")
 import image_recon_func as irf  # noqa: E402
 import processing_func as pf  # noqa: E402
-import spatial_basis_funs as sbf  # noqa: E402
+import spatial_basis_func as sbf  # noqa: E402
 
 ROOT_DIR = os.path.join("/", "projectnb", "nphfnirs", "s", "datasets", "BSMW_Laura_Miray_2025", "BS_bids")
-FLAG_DO_SPATIAL_SMOOTHING = True
+FLAG_DO_SPATIAL_SMOOTHING = False
 FLAG_USE_ONLY_SENSITIVE = True
 TASK = "BS"
-NOISE_MODEL = "ar_irls"
-FNAME_FLAG = "ts"
+NOISE_MODEL = "ols"
+FNAME_FLAG = "mag"
 # Whether per-measurement C_meas was used when performing image reconstructions
 # Some filename templates expect a Cmeas_name variable; define the flag and
 # derived name here to avoid NameError in templates.
@@ -141,28 +141,30 @@ for cfg in cfg_list[:1]:
             if SB:
                 filepath = os.path.join(
                     SAVE_DIR,
+                    subj,
                     f"{subj}_task-{TASK}_image_hrf_{FNAME_FLAG}_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}.pkl.gz",
                 )
             else:
                 filepath = os.path.join(
                     SAVE_DIR,
+                    subj,
                     f"{subj}_task-{TASK}_image_hrf_{FNAME_FLAG}_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}.pkl.gz",
                 )
 
             with gzip.open(filepath, "rb") as f:
                 results = pickle.load(f)
 
-            X_hrf_ts = results["X_hrf"].sel(trial_type=trial_type)
-            X_mse = results["X_mse"].sel(trial_type=trial_type)
+            X_hrf_ts = results["X_hrf"].sel(trial_type=trial_type).drop_vars('trial_type')
+            X_mse = results["X_mse"].sel(trial_type=trial_type).drop_vars('trial_type')
             all_subj_X_hrf_ts.append(X_hrf_ts)
             all_subj_X_mse.append(X_mse)
 
-        all_subj_X_hrf_ts = xr.concat(all_subj_X_hrf_ts, dim="subj")
-        all_subj_X_mse = xr.concat(all_subj_X_mse, dim="subj")
+        all_subj_X_hrf_ts_xr = xr.concat(all_subj_X_hrf_ts, dim="subj")
+        all_subj_X_mse_xr = xr.concat(all_subj_X_mse, dim="subj")
 
         if FLAG_DO_SPATIAL_SMOOTHING:
-            all_subj_X_hrf_ts = all_subj_X_hrf_ts.transpose("subj", "chromo", "vertex", "time")
-            all_subj_X_mse = all_subj_X_mse.transpose("subj", "chromo", "vertex")
+            all_subj_X_hrf_ts = all_subj_X_hrf_ts_xr.transpose("subj", "chromo", "vertex", "time")
+            all_subj_X_mse = all_subj_X_mse_xr.transpose("subj", "chromo", "vertex")
 
             all_subj_X_hrf_ts_orig = all_subj_X_hrf_ts.copy()
             all_subj_X_mse_orig = all_subj_X_mse.copy()
@@ -178,12 +180,12 @@ for cfg in cfg_list[:1]:
             all_subj_X_hrf_ts_new = all_subj_X_hrf_ts - H_global
             all_subj_X_hrf_ts = all_subj_X_hrf_ts_new.copy()
 
-        X_hrf_ts_mean = all_subj_X_hrf_ts.mean("subj", skipna=True)
+        X_hrf_ts_mean = all_subj_X_hrf_ts_xr.mean("subj", skipna=True)
 
-        all_subj_X_hrf_ts_tmp = all_subj_X_hrf_ts.where(~np.isnan(all_subj_X_hrf_ts), drop=True)
-        all_subj_X_mse_tmp = all_subj_X_mse.where(~np.isnan(all_subj_X_mse), drop=True)
+        all_subj_X_hrf_ts_tmp = all_subj_X_hrf_ts_xr.where(~np.isnan(all_subj_X_hrf_ts_xr), drop=True)
+        all_subj_X_mse_tmp = all_subj_X_mse_xr.where(~np.isnan(all_subj_X_mse_xr), drop=True)
 
-        X_hrf_ts_mean_weighted = (all_subj_X_hrf_ts_tmp / all_subj_X_mse_tmp).sum("subj") / (1 / all_subj_X_mse).sum(
+        X_hrf_ts_mean_weighted = (all_subj_X_hrf_ts_tmp / all_subj_X_mse_tmp).sum("subj") / (1 / all_subj_X_mse_xr).sum(
             "subj"
         )
 
@@ -211,7 +213,7 @@ for cfg in cfg_list[:1]:
         X_tstat = X_hrf_ts_mean_weighted / X_stderr_weighted
 
         if FLAG_DO_SPATIAL_SMOOTHING:
-
+            #FIXME: make sure this works with spatial smoothing 
             if FLAG_USE_ONLY_SENSITIVE:
                 template = xr.full_like(all_subj_X_hrf_ts_orig, np.nan)
                 full_mask = xr.zeros_like(Adot.is_brain, dtype=bool)
@@ -249,8 +251,8 @@ for cfg in cfg_list[:1]:
 
         if all_trial_all_subj_X_hrf_ts is None:
 
-            all_trial_all_subj_X_hrf_ts = all_subj_X_hrf_ts
-            all_trial_all_subj_X_mse = all_subj_X_mse_orig
+            all_trial_all_subj_X_hrf_ts = all_subj_X_hrf_ts_xr
+            all_trial_all_subj_X_mse = all_subj_X_mse_xr
 
             all_trial_X_hrf_ts = X_hrf_ts_mean
             all_trial_X_hrf_ts_weighted = X_hrf_ts_mean_weighted
@@ -260,8 +262,8 @@ for cfg in cfg_list[:1]:
             all_trial_X_mse_within = X_mse_mean_within_subject
         else:
 
-            all_trial_all_subj_X_hrf_ts = xr.concat([all_trial_all_subj_X_hrf_ts, all_subj_X_hrf_ts], dim="trial_type")
-            all_trial_all_subj_X_mse = xr.concat([all_trial_all_subj_X_mse, all_subj_X_mse_orig], dim="trial_type")
+            all_trial_all_subj_X_hrf_ts = xr.concat([all_trial_all_subj_X_hrf_ts, all_subj_X_hrf_ts_xr], dim="trial_type")
+            all_trial_all_subj_X_mse = xr.concat([all_trial_all_subj_X_mse, all_subj_X_mse_xr], dim="trial_type")
 
             all_trial_X_hrf_ts = xr.concat([all_trial_X_hrf_ts, X_hrf_ts_mean], dim="trial_type")
             all_trial_X_hrf_ts_weighted = xr.concat(

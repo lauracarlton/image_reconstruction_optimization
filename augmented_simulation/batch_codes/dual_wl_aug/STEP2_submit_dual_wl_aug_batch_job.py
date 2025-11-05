@@ -60,8 +60,8 @@ CODE_DIR = '/projectnb/nphfnirs/s/users/lcarlton/ANALYSIS_CODE/imaging_paper_fig
 
 alpha_meas_list = [10 ** i for i in range(-1, 3)]
 alpha_spatial_list = [1e-3, 1e-2]
-sigma_brain_list = [0] #, 1, 3, 5]
-sigma_scalp_list = [0] #, 1, 5, 10, 20]
+sigma_brain_list = [0, 1, 3, 5]
+sigma_scalp_list = [0, 1, 5, 10, 20]
 
 
 for sigma_brain in sigma_brain_list:

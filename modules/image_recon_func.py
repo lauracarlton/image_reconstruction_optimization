@@ -26,7 +26,7 @@ import sys
 
 
 sys.path.append('/projectnb/nphfnirs/s/users/lcarlton/ANALYSIS_CODE/imaging_paper_figure_code/modules/')
-import spatial_basis_funs as sbf
+import spatial_basis_func as sbf
 import pdb
 
 #%% DATA LOADING

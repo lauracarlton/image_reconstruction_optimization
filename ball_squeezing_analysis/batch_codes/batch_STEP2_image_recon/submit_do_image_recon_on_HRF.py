@@ -56,7 +56,7 @@ SHELL_SCRIPT = os.path.join(
     "imaging_paper_figure_code",
     "ball_squeezing_analysis",
     "batch_codes",
-    "batch_code_image_recon",
+    "batch_STEP2_image_recon",
     "shell_do_image_recon_on_HRF.sh",
 )
 # --------------------------------------------------
@@ -67,5 +67,4 @@ subject_list = [d for d in dirs if "sub" in d and d not in EXCLUDED]
 
 for subj in subject_list:
     qsub_command = f"qsub {SHELL_SCRIPT} {subj}"
-    print("Running:", qsub_command)
     subprocess.run(qsub_command, shell=True)

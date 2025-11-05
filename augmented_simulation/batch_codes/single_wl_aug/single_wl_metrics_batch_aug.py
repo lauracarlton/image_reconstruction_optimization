@@ -94,7 +94,7 @@ import cedalion.sim.synthetic_hrf as synthetic_hrf
 from cedalion.io.forward_model import load_Adot
 
 sys.path.append('/projectnb/nphfnirs/s/users/lcarlton/ANALYSIS_CODE/imaging_paper_figure_code/modules/')
-import spatial_basis_funs as sbf
+import spatial_basis_func as sbf
 import image_recon_func as irf
 import get_image_metrics as gim  
 
@@ -170,10 +170,9 @@ contrast_ratio = FWHM.copy()
 M = sbf.get_sensitivity_mask(Adot, mask_threshold, 1)
 
 if sigma_brain > 0 and sigma_scalp > 0:
-    print(f'\tsigma brain = {sigma_brain}')
-    print(f'\tsigma scalp = {sigma_scalp}')
+    print(f'\tsigma brain = {sigma_brain}, sigma scalp = {sigma_scalp}')
 
-    G_brain_path = os.path.join(PROBE_DIR, f'/G_matrix_sigmabrain-{sigma_brain}.pkl')
+    G_brain_path = os.path.join(PROBE_DIR, f'G_matrix_sigmabrain-{sigma_brain}.pkl')
     if os.path.exists(G_brain_path):
         with open(G_brain_path, 'rb') as f:
             G_brain = pickle.load(f)
@@ -183,7 +182,7 @@ if sigma_brain > 0 and sigma_scalp > 0:
         with open(G_brain_path, 'wb') as f:
                 pickle.dump(G_brain, f)
 
-    G_scalp_path = os.path.join(PROBE_DIR, f'/G_matrix_sigmascalp-{sigma_scalp}.pkl')
+    G_scalp_path = os.path.join(PROBE_DIR, f'G_matrix_sigmascalp-{sigma_scalp}.pkl')
     if os.path.exists(G_scalp_path):
         with open(G_scalp_path, 'rb') as f:
             G_scalp = pickle.load(f)
@@ -311,7 +310,6 @@ for vv, seed_vertex in enumerate(VERTEX_LIST):
     X_err_brain = X_stderr_weighted[X_hrf_mag_mean_weighted.is_brain.values]
     
     ROI = gim.get_ROI(X_brain, 0.5)
-    ROI_expected = gim.get_ROI(expected_contrast, 0.5)
 
     ##### GET FWHM ####
     FWHM.loc[seed_vertex] = gim.get_FWHM(X_brain, head, version='weighted_mean')

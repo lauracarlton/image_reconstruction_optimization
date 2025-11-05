@@ -85,7 +85,7 @@ SCALE_FACTOR = 0.02
 NOISE_MODEL = 'ols'  # add if consistent with other figures
 
 alpha_spatial_sb = 1e-2
-alpha_spatial_no_sb = 1e-3
+alpha_spatial_nosb = 1e-3
 
 #%% LOAD DATA
 SAVE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'augmented_data')
@@ -93,7 +93,7 @@ SAVE_PLOT = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'figures')
 
 os.makedirs(SAVE_PLOT, exist_ok=True)
 
-with open(os.path.join(SAVE_DIR, f'COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_single_wl_{NOISE_MODEL}.pkl'), 'rb') as f:
+with open(os.path.join(SAVE_DIR, f'COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_{NOISE_MODEL}_single_wl.pkl'), 'rb') as f:
     RESULTS = pickle.load(f)
 
 sigma_brain_list = RESULTS['FWHM'].coords['sigma_brain'].values
@@ -122,7 +122,7 @@ def plot_metric(ax, metric_name, y_label, colors, ls_list):
                 alpha_spatial = alpha_spatial_sb
                 label = f'$\\sigma_{{scalp}}$ = {sigma_scalp} mm' if sigma_brain == sigma_brain_list[1] else None
             elif sigma_brain == 0 and sigma_scalp == 0:
-                alpha_spatial = alpha_spatial_no_sb
+                alpha_spatial = alpha_spatial_nosb
                 label = 'No Spatial Basis'
             else:
                 continue
@@ -197,7 +197,7 @@ fig.legend(handles, labels,
 #% SAVE FIGURE
 plt.tight_layout() 
 plt.savefig(
-    os.path.join(SAVE_PLOT, f'FIG5_{BLOB_SIGMA}mm_assb-{alpha_spatial_sb}_asnosb-{alpha_spatial_no_sb}_metrics_augRS_single_wl_{NOISE_MODEL}.png'),
+    os.path.join(SAVE_PLOT, f'FIG5_task-{TASK}_blob-{BLOB_SIGMA}mm_assb-{alpha_spatial_sb}_asnosb-{alpha_spatial_nosb}_{NOISE_MODEL}_metrics_single_wl.png'),
     dpi=300
 )
 plt.show()

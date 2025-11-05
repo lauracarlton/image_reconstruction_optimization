@@ -104,7 +104,7 @@ from cedalion.io.forward_model import load_Adot
 
 sys.path.append('/projectnb/nphfnirs/s/users/lcarlton/ANALYSIS_CODE/imaging_paper_figure_code/modules/')
 import image_recon_func as irf
-import spatial_basis_funs as sbf
+import spatial_basis_func as sbf
 import get_image_metrics as gim  
 
 warnings.filterwarnings('ignore')
@@ -139,7 +139,7 @@ dirs = os.listdir(ROOT_DIR)
 subject_list = [d for d in dirs if 'sub' in d and d not in EXCLUDED]
 
 #%% LOAD DATA
-head, parcel_dir = irf.load_head_model(with_parcels=False)
+head, parcel_dir = irf.load_head_model(HEAD_MODEL, with_parcels=False)
 Adot = load_Adot(os.path.join(PROBE_DIR, 'Adot.nc'))
 
 channels = Adot.channel
@@ -197,31 +197,31 @@ P_indirect = P_direct.copy()
 
 M = sbf.get_sensitivity_mask(Adot, mask_threshold, wl_idx)
 
+print('Running simulation using a both wavelengths')
 for sigma_brain in sigma_brain_list: 
-     
-    if sigma_brain > 0:
-        print(f'\tsigma brain = {sigma_brain.magnitude}')
-        G_brain_path = os.path.join(PROBE_DIR, f'/G_matrix_sigmabrain-{sigma_brain}.pkl')
-        if os.path.exists(G_brain_path):
-            with open(G_brain_path, 'rb') as f:
-                G_brain = pickle.load(f)
-        else:
-            brain_downsampled = sbf.downsample_mesh(head.brain.vertices, M[M.is_brain], sigma_brain*units.mm)
-            G_brain = sbf.get_kernel_matrix(brain_downsampled, head.brain.vertices, sigma_brain*units.mm)
-            with open(G_brain_path, 'wb') as f:
-                    pickle.dump(G_brain, f)
 
     for sigma_scalp in sigma_scalp_list:
         
         if sigma_scalp > 0 and sigma_brain > 0:
-            print(f'\tsigma scalp = {sigma_scalp.magnitude}')
-            G_scalp_path = os.path.join(PROBE_DIR, f'/G_matrix_sigmascalp-{sigma_scalp}.pkl')
+            print(f'\tsigma brain = {sigma_brain.magnitude}, sigma scalp = {sigma_scalp.magnitude}')
+
+            G_brain_path = os.path.join(PROBE_DIR, f'G_matrix_sigmabrain-{float(sigma_brain.magnitude)}.pkl')
+            if os.path.exists(G_brain_path):
+                with open(G_brain_path, 'rb') as f:
+                    G_brain = pickle.load(f)
+            else:
+                brain_downsampled = sbf.downsample_mesh(head.brain.vertices, M[M.is_brain], sigma_brain)
+                G_brain = sbf.get_kernel_matrix(brain_downsampled, head.brain.vertices, sigma_brain)
+                with open(G_brain_path, 'wb') as f:
+                        pickle.dump(G_brain, f)
+
+            G_scalp_path = os.path.join(PROBE_DIR, f'G_matrix_sigmascalp-{float(sigma_scalp.magnitude)}.pkl')
             if os.path.exists(G_scalp_path):
                 with open(G_scalp_path, 'rb') as f:
                     G_scalp = pickle.load(f)
             else:
-                scalp_downsampled = sbf.downsample_mesh(head.scalp.vertices, M[~M.is_brain], sigma_scalp*units.mm)
-                G_scalp = sbf.get_kernel_matrix(scalp_downsampled, head.scalp.vertices, sigma_scalp*units.mm)
+                scalp_downsampled = sbf.downsample_mesh(head.scalp.vertices, M[~M.is_brain], sigma_scalp)
+                G_scalp = sbf.get_kernel_matrix(scalp_downsampled, head.scalp.vertices, sigma_scalp)
                 with open(G_scalp_path, 'wb') as f:
                         pickle.dump(G_scalp, f)
 
@@ -245,7 +245,7 @@ for sigma_brain in sigma_brain_list:
 
         for alpha_spatial in alpha_spatial_list:
            
-            print(f'\talpha_spatial = {alpha_spatial}')
+            print(f'\t\talpha_spatial = {alpha_spatial}')
             
             F_direct = None
             D_direct = None
@@ -253,7 +253,7 @@ for sigma_brain in sigma_brain_list:
             D_indirect = None
 
             for ii, seed_vertex in enumerate(VERTEX_LIST):
-                print(f'\t\tseed vertex = {ii+1}/{len(VERTEX_LIST)}')
+                print(f'\t\t\tseed vertex = {ii+1}/{len(VERTEX_LIST)}')
 
                 for alpha_meas in alpha_meas_list:
                 
@@ -287,7 +287,7 @@ for sigma_brain in sigma_brain_list:
                             if chromo == 'HbO':
                                 ground_truth[:nV_brain] = blob_img
                             else:
-                                ground_truth[nvertices:nvertices+nV_brain] = blob_img
+                                ground_truth[nV:nV+nV_brain] = blob_img
                         
                             ##### DIRECT METHOD 
                             y = Adot_stacked.values @ ground_truth 
@@ -335,7 +335,7 @@ for sigma_brain in sigma_brain_list:
                             X_od = np.vstack([X_wl0, X_wl1]).T
                             X_od = xr.DataArray(X_od, 
                                              dims = ('vertex', 'wavelength'),
-                                             coords = {'wavelength': rec['amp'].wavelength,
+                                             coords = {'wavelength': Adot.wavelength,
                                                        'parcel': ('vertex',Adot.coords['parcel'].values),
                                                        'is_brain':('vertex', Adot.coords['is_brain'].values)},
                                             )
@@ -499,5 +499,8 @@ RESULTS = {
            'contrast_ratio_HbO_indirect': contrast_ratio_HbO_indirect
     }
 
+print('saving data')
 with open(os.path.join(SAVE_DIR, f'COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA.magnitude}mm_scale-{SCALE_FACTOR}_{NOISE_MODEL}_dual_wl.pkl'), 'wb') as f:
     pickle.dump(RESULTS, f)
+
+# %%

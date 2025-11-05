@@ -111,7 +111,7 @@ warnings.filterwarnings('ignore')
 #%% CONFIG 
 # DATA STORAGE PARAMS
 ROOT_DIR = os.path.join('/projectnb', 'nphfnirs', 's', 'datasets', 'BSMW_Laura_Miray_2025', 'BS_bids')
-EXCLUDED = ['sub-577']
+EXCLUDED = ['sub-577'] # does not contain RS data 
 TASK = "RS"
 
 # HEAD PARAMS
@@ -138,7 +138,7 @@ SNR_THRESH = 5 # signal to noise ratio threshold
 SAVE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'augmented_data')
 os.makedirs(SAVE_DIR, exist_ok=True)
 
-PROBE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'fw', HEAD_MODEL)
+PROBE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'fw', HEAD_MODEL)
 
 dirs = os.listdir(ROOT_DIR)
 SUBJECT_LIST = [d for d in dirs if 'sub' in d and d not in EXCLUDED]
@@ -271,7 +271,7 @@ for ss, subject in enumerate(SUBJECT_LIST):
         rec['od_wHRF'].time.attrs['units'] = units.s
         
         # do TDDR and lowpass filter if the noise model is OLS
-        if cfg_GLM['GLM_METHOD'] == 'ols':
+        if cfg_GLM['noise_model'] == 'ols':
             rec['od_wHRF'] = motion.tddr(rec['od_wHRF'])
             rec['od_wHRF'] = rec['od_wHRF'].where( ~rec['od_wHRF'].isnull(), 1e-18 ) 
 
@@ -307,7 +307,7 @@ for ss, subject in enumerate(SUBJECT_LIST):
         
 # save the C_meas as the within subject variance for all subjects  
 print('Saving the data')
-with open(os.path.join(SAVE_DIR, f"C_meas_subj_task-{TASK}_blob-{BLOB_SIGMA.magnitude}mm_scale-{SCALE_FACTOR}_{cfg_GLM['GLM_METHOD']}.pkl"), 'wb') as f:
+with open(os.path.join(SAVE_DIR, f"C_meas_subj_task-{TASK}_blob-{BLOB_SIGMA.magnitude}mm_scale-{SCALE_FACTOR}_{cfg_GLM['noise_model']}.pkl"), 'wb') as f:
     pickle.dump(C_meas_list, f)
 
 print('Complete.')
