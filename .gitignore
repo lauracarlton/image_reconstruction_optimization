@@ -5,6 +5,8 @@ __pycache__/
 
 # pysnirf log
 pysnirf2.log
+/output
+/error
 
 # C extensions
 *.so
