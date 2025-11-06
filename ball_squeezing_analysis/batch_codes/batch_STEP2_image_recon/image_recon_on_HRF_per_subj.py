@@ -249,10 +249,10 @@ for cfg in cfg_list:
         )
 
         if SB and not G_EXISTS:
-            with open(PROBE_DIR + f"G_matrix_sigmabrain-{float(sigma_brain)}.pkl", "wb") as f:
+            with open(os.path.join(PROBE_DIR, f"G_matrix_sigmabrain-{float(sigma_brain)}.pkl"), "wb") as f:
                 pickle.dump(G["G_brain"], f)
 
-            with open(PROBE_DIR + f"G_matrix_sigmascalp-{float(sigma_scalp)}.pkl", "wb") as f:
+            with open(os.path.join(PROBE_DIR, f"G_matrix_sigmascalp-{float(sigma_scalp)}.pkl"), "wb") as f:
                 pickle.dump(G["G_scalp"], f)
 
             G_EXISTS = True
