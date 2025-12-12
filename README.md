@@ -1,6 +1,6 @@
 # Image Reconstruction Optimization for fNIRS
 
-This repository provides tools to optimize surface-based image reconstruction for functional near-infrared spectroscopy (fNIRS) data. The code implements methods described in [PAPER NAME] and consists of two main analysis pipelines:
+This repository provides tools to optimize surface-based image reconstruction for functional near-infrared spectroscopy (fNIRS) data. The code implements methods described in "Surface-Based Image Reconstruction Optimization for High-Density Functional Near Infrared Spectroscopy" and consists of two main analysis pipelines:
 
 1. **Augmented Simulation Analysis**: Use data augmentation to systematically explore the image reconstruction parameter space
 2. **Real Data Validation**: Apply optimized parameters to experimental ball-squeezing task data
@@ -35,7 +35,7 @@ If you use this code, please cite:
 ### Software Dependencies
 - **Python**: 3.8 or higher
 - **Cedalion**: v24 (fNIRS analysis framework)
-  - Installation: See [Cedalion GitHub](https://github.com/duwadisudan/cedalion)
+  - Installation: See [Cedalion GitHub](https://github.com/ibs-lab/cedalion)
   - This package provides the core fNIRS processing, forward modeling, and GLM functionality
 - **Additional Python packages** (installed with Cedalion):
   - `xarray`, `numpy`, `pandas`, `scipy`
@@ -49,17 +49,19 @@ If you use this code, please cite:
 ### Data Requirements
 - **BIDS-formatted fNIRS data**: Your dataset should follow BIDS structure with SNIRF files
 - **Forward model**: Pre-computed sensitivity matrices (Adot) for your probe geometry 
-    - for more information on generating the sensitivity matrix refer to the Cedalion documentation 
+    - for more information on generating the sensitivity matrix refer to the Cedalion documentation - see examples/head_models/
 - **Head model**: ICBM152 or Colin27 template (included with Cedalion)
-
+    - other head models can also be used - see examples/head_models/
 ---
 
 ## Installation
 
-### 1. Install Cedalion
+### 1. Install Cedalion (more detailed instructions availble in the Cedalion documentation)
 ```bash
 # Clone and install Cedalion v24
 git clone https://github.com/cedalion.git
+conda env create -n cedalion -f environment_dev.yml
+conda activate cedalion
 cd cedalion
 pip install -e .
 ```
@@ -76,7 +78,7 @@ Add the modules directory to your Python path, or modify scripts to point to you
 import sys
 sys.path.append('/path/to/image_reconstruction_optimization/modules/')
 ```
-
+This needs to be done for all scripts and modules
 ---
 
 ## Repository Structure
@@ -244,12 +246,12 @@ The augmented simulation approach:
 2. Adds synthetic HRF activations at known cortical locations
 3. Reconstructs the synthetic activations using different parameter combinations
 4. Quantifies reconstruction quality (localization error, FWHM, CNR, etc.)
-5. Identifies optimal parameter settings
 
 ### Step-by-Step Workflow
 
 #### **STEP 0: Seed Vertex Selection** (Optional)
 Select cortical locations for synthetic activation placement.
+If using a head model different from the Cedalion ICBM152 implementation then this step is required. 
 
 **Script**: `augmented_simulation/STEP0_seed_vertex_selection.py`
 
@@ -314,7 +316,7 @@ python FIG5&6_STEP1_get_measurement_variance.py
 **Output**: `C_meas_subj_task-RS_blob-15mm_scale-0.02_ols.pkl`
 - Measurement covariance matrix (channel × wavelength × subject × vertex)
 
-**Expected Runtime**: ~10-30 minutes per subject (depends on data size)
+**Expected Runtime**: ~10-30 minutes per subject (depends on data size and GLM solve method used)
 
 ---
 
@@ -345,8 +347,9 @@ python FIG5_STEP2_get_single_wavelength_image_metrics.py
 **Process for Each Parameter Combination**:
 1. Loads synthetic data and measurement variance
 2. Computes reconstruction matrix W using given parameter combination
-3. Reconstructs images at each seed vertex
-4. Calculates metrics:
+3. Reconstructs images at each seed vertex for each subject
+4. For each seed, get the group average image
+5. Calculates metrics:
    - Localization error (distance from true source)
    - FWHM (spatial resolution)
    - CNR (contrast-to-noise ratio)
@@ -368,7 +371,7 @@ Test dual-wavelength reconstruction across parameter space.
 
 **Script**: `augmented_simulation/FIG6_STEP2_get_dual_wavelength_image_metrics.py`
 
-**Similar to STEP 2A but for direct (dual-wavelength) reconstruction.**
+**Similar to STEP 2A but for direct and indirect reconstruction.**
 
 **Key Differences**:
 - Performs image reconstruction using both the indirect and direct methods
@@ -447,7 +450,7 @@ qstat  # Check running jobs
 python STEP3_compile_results_single_wl.py
 ```
 
-**Output**: Combined results file with all parameter combinations
+**Output**: Combined results file with all parameter combinations (same path as when using the script)
 
 #### Dual-Wavelength Batch Processing
 
@@ -491,7 +494,7 @@ python STEP3_compile_results_dual_wl.py
 
 ## Pipeline 2: Real Data Analysis (Ball Squeezing)
 
-This pipeline applies optimized parameters to experimental data to generate publication-quality images.
+This pipeline applies optimized parameters to experimental data.
 
 ### Overview
 The ball squeezing analysis:
@@ -514,11 +517,12 @@ ROOT_DIR = '/path/to/ball_squeezing_dataset'
 TASK = 'BS'  # Ball squeezing task
 N_RUNS = 3  # Number of runs per subject
 NOISE_MODEL = 'ols'  # or 'ar_irls'
-EXCLUDED = ['sub-538', 'sub-549']  # Bad subjects
+EXCLUDED = []  # Bad subjects
 
 # GLM parameters
 cfg_GLM = {
     'do_drift': True,
+    'do_drift_legendre': False
     'do_short_sep': True,
     'drift_order': 3,
     'distance_threshold': 20 * units.mm,
@@ -541,10 +545,10 @@ python FIG8_STEP1_hrf_estimation.py
 
 **Process**:
 1. **Load Data**: Reads SNIRF files and event timing
-2. **Quality Control**: Prunes bad channels based on SNR, amplitude, SD distance
+2. **Quality Control**: Identify bad channels based on SNR, amplitude
 3. **Preprocessing**:
    - Motion correction (TDDR if OLS)
-   - Bandpass filtering
+   - Bandpass filtering (if OLS)
    - Convert to concentration
 4. **GLM**: Estimates HRF for each channel/chromophore
 5. **Save Results**: HRF estimates and measurement covariance per subject
@@ -575,7 +579,7 @@ cfg_list = [
 
 # Time window for averaging to get magnitude images 
 MAG_TS_FLAG = 'mag' # 'mag' if want magnitude images, 'ts' if want the full timeseries in image space
-T_AVG = [4, 7]  # seconds
+T_AVG = [4, 7]  # seconds to average over if just interested in magnitude images
 ```
 
 **Run**:
@@ -618,13 +622,13 @@ python FIG8_STEP3_get_group_average.py
 
 **Process**:
 1. Loads all subject images
-2. Applies spatial smoothing across subjects
+2. Applies spatial smoothing across subjects if enabled
 3. Computes group mean and standard error
 4. Saves group-level images
 
 **Output**:
 - `group_images_direct_sb-{sigma}mm_alpha-{alpha}_smooth-{sigma_smooth}mm.pkl.gz`
-  - Contains: Group mean, standard error, subject count
+  - Contains: Group mean, standard error, group t-stat
 
 ---
 
@@ -729,10 +733,11 @@ derivatives/cedalion/processed_data/
 ├── sub-001/
 │   ├── sub-001_task-BS_preprocessed_results_ols.pkl
 │   ├── sub-001_task-BS_conc_o_hrf_estimates_ols.pkl.gz
-│   └── sub-001_task-BS_images_direct_sb-3mm_alpha-0.1_0.01.pkl.gz
+│   └── sub-001_task-BS_image_hrf_mag_as-0.01_am-0.1_sb-1_ss-5_indirect_Cmeas_ols.pkl.gz,
+
 ├── sub-002/
 │   └── ...
-└── group_images_direct_sb-3mm_alpha-0.1_0.01_smooth-80mm.pkl.gz
+└── task-BS_image_hrf_mag_as-0.01_am-0.1_sb-1_ss-5_indirect_Cmeas_ols.pkl.gz"
 ```
 
 ---
@@ -748,4 +753,4 @@ For questions or issues:
 
 ## Acknowledgments
 This code builds on the Cedalion fNIRS analysis framework. Special thanks to the Cedalion development team. They can be cited:  
-
+Intelligent Biomedical Sensing (IBS) Lab, & Cedalion Developers. (2024). Cedalion Python Toolbox (Version 1.0.0) [Computer software]. https://github.com/ibs-lab/cedalion
