@@ -82,27 +82,32 @@ warnings.filterwarnings("ignore")
 
 # %%
 subject = str(sys.argv[1])
-# subject = 'sub-580'
+# subject = 'sub-583'
 # %% set up config parameters
-ROOT_DIR = os.path.join("/", "projectnb", "nphfnirs", "s", "datasets", "BSMW_Laura_Miray_2025", "BS_bids")
+ROOT_DIR = os.path.join("/", "projectnb", "nphfnirs", "s", "datasets", "BSMW_Laura_Miray_2025", "BS_bids_v2")
 NOISE_MODEL = "ar_irls"
 TASK = "BS"
 REC_STR = "conc_o"
 CMEAS_FLAG = True
-MAG_TS_FLAG = "mag"
+MAG_TS_FLAG = "TS" # either TS or MAG
 T_WIN = [5, 8]
+optional_flag = ''
+
+lambda_spatial_depth_direct = 1e-6
+lambda_spatial_depth_indirect =lambda_spatial_depth_direct * 1.6e-3
 
 cfg_list = [
-    {"alpha_meas": 1e4, "alpha_spatial": 1e-3, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e2, "alpha_spatial": 1e-3, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e4, "alpha_spatial": 1e-2, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e2, "alpha_spatial": 1e-2, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-3, "lambda_spatial_depth": lambda_spatial_depth_indirect, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-3, "lambda_spatial_depth": lambda_spatial_depth_direct, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-2, "lambda_spatial_depth": lambda_spatial_depth_indirect, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-2, "lambda_spatial_depth": lambda_spatial_depth_direct, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
 ]
+
 
 cfg_mse = {"mse_val_for_bad_data": 1e1, "mse_amp_thresh": 1e-3 * units.V, "blockaverage_val": 0, "mse_min_thresh": 1e-6}
 
 SAVE_DIR = os.path.join(ROOT_DIR, "derivatives", "cedalion", "processed_data", "image_space", subject)
-PROBE_DIR = os.path.join(ROOT_DIR, "derivatives", "cedalion", "fw", "ICBM152")
+PROBE_DIR = os.path.join(ROOT_DIR, "derivatives", "cedalion", "fw", "probe")
 os.makedirs(SAVE_DIR, exist_ok=True)
 
 # %% load head model
@@ -147,7 +152,6 @@ dpf = xr.DataArray(
 )
 E = nirs.get_extinction_coefficients("prahl", Adot.wavelength)
 
-# %%
 for cfg in cfg_list:
     F = None
     D = None
@@ -158,16 +162,17 @@ for cfg in cfg_list:
     sigma_brain = cfg["sigma_brain"]
     sigma_scalp = cfg["sigma_scalp"]
     alpha_meas = cfg["alpha_meas"]
-    alpha_spatial = cfg["alpha_spatial"]
+    alpha_spatial_depth = cfg["alpha_spatial_depth"]
+    lambda_spatial_depth = cfg["lambda_spatial_depth"]
 
-    if os.path.exists(PROBE_DIR + f"G_matrix_sigmabrain-{float(sigma_brain)}.pkl") and os.path.exists(
-        PROBE_DIR + f"G_matrix_sigmascalp-{float(sigma_scalp)}.pkl"
+    if os.path.exists(os.path.join(PROBE_DIR, f"G_matrix_sigmabrain-{float(sigma_brain)}.pkl")) and os.path.exists(
+        os.path.join(PROBE_DIR, f"G_matrix_sigmascalp-{float(sigma_scalp)}.pkl")
     ):
         G_EXISTS = True
-        with open(PROBE_DIR + f"G_matrix_sigmabrain-{float(sigma_brain)}.pkl", "rb") as f:
+        with open(os.path.join(PROBE_DIR, f"G_matrix_sigmabrain-{float(sigma_brain)}.pkl"), "rb") as f:
             G_brain = pickle.load(f)
 
-        with open(PROBE_DIR + f"G_matrix_sigmascalp-{float(sigma_scalp)}.pkl", "rb") as f:
+        with open(os.path.join(PROBE_DIR, f"G_matrix_sigmascalp-{float(sigma_scalp)}.pkl"), "rb") as f:
             G_scalp = pickle.load(f)
 
         G = {"G_brain": G_brain, "G_scalp": G_scalp}
@@ -194,7 +199,7 @@ for cfg in cfg_list:
         "sigma_scalp": sigma_scalp * units.mm,
     }
 
-    print(f"alpha_meas = {alpha_meas}, alpha_spatial = {alpha_spatial}, SB = {SB}, {direct_name}")
+    print(f"alpha_meas = {alpha_meas}, alpha_spatial_depth = {alpha_spatial_depth}, lambda_spatial_depth = {lambda_spatial_depth}, SB = {SB}, {direct_name}")
 
     all_trial_X_hrf = None
     all_trial_X_mse = None
@@ -241,7 +246,7 @@ for cfg in cfg_list:
             DIRECT=DIRECT,
             SB=SB,
             cfg_sbf=cfg_sbf,
-            alpha_spatial=alpha_spatial,
+            alpha_spatial_depth=alpha_spatial_depth,
             alpha_meas=alpha_meas,
             F=F,
             D=D,
@@ -264,7 +269,23 @@ for cfg in cfg_list:
         else:
             template = X_hrf.isel(time=0).squeeze()
 
-        X_mse = irf.get_image_noise(C_meas, template, W, DIRECT=DIRECT, SB=SB, G=G)
+        # X_mse = irf.get_image_noise(C_meas, template, W, DIRECT=DIRECT, SB=SB, G=G)
+        if DIRECT:
+            Adot_tmp = irf.get_Adot_scaled(Adot, Adot.wavelength)
+        else: 
+            Adot_tmp = Adot
+        X_mse = irf.get_image_noise_posterior(Adot_tmp, C_meas, 
+                                            alpha_meas==alpha_meas, 
+                                            lambda_spatial_depth=lambda_spatial_depth, 
+                                            alpha_spatial_depth=alpha_spatial_depth, 
+                                            DIRECT=DIRECT, G=G
+                                            )
+        if 'parcel' in Adot.coords:
+            X_mse = X_mse.assign_coords({"parcel" : ("vertex", Adot.coords['parcel'].values)})
+                            
+        if 'is_brain' in Adot.coords:
+            X_mse = X_mse.assign_coords({"is_brain": ("vertex", Adot.coords['is_brain'].values)}) 
+
 
         if all_trial_X_hrf is None:
 
@@ -294,12 +315,12 @@ for cfg in cfg_list:
     if SB:
         filepath = os.path.join(
             SAVE_DIR,
-            f"{subject}_task-{TASK}_image_hrf_{fname_flag}_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}.pkl.gz",
+            f"{subject}_task-{TASK}_image_hrf_{fname_flag}_as-{alpha_spatial_depth:.0e}_ls-{lambda_spatial_depth:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}{optional_flag}.pkl.gz",
         )
     else:
         filepath = os.path.join(
             SAVE_DIR,
-            f"{subject}_task-{TASK}_image_hrf_{fname_flag}_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}.pkl.gz",
+            f"{subject}_task-{TASK}_image_hrf_{fname_flag}_as-{alpha_spatial_depth:.0e}_ls-{lambda_spatial_depth:.0e}_am-{alpha_meas:.0e}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}{optional_flag}.pkl.gz",
         )
 
     file = gzip.GzipFile(filepath, "wb")
@@ -307,4 +328,4 @@ for cfg in cfg_list:
     file.close()
 
 print("Job Complete")
-# %%
+    # %%

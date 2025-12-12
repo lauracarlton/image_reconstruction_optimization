@@ -78,11 +78,11 @@ plt.rcParams['font.size'] = 80
 
 #%% SET UP CONFIGURABLES
 
-ROOT_DIR = os.path.join('/projectnb', 'nphfnirs', 's', 'datasets', 'BSMW_Laura_Miray_2025', 'BS_bids')
+ROOT_DIR = os.path.join('/projectnb', 'nphfnirs', 's', 'datasets', 'BSMW_Laura_Miray_2025', 'BS_bids_v2')
 BLOB_SIGMA = 15
 TASK = 'RS'
 SCALE_FACTOR = 0.02
-NOISE_MODEL = 'ols'  # add if consistent with other figures
+NOISE_MODEL = 'ar_irls'  # add if consistent with other figures
 
 alpha_spatial_sb = 1e-2
 alpha_spatial_nosb = 1e-3
@@ -97,8 +97,10 @@ with open(os.path.join(SAVE_DIR, f'COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLO
     RESULTS = pickle.load(f)
 
 sigma_brain_list = RESULTS['FWHM'].coords['sigma_brain'].values
-sigma_scalp_list = RESULTS['FWHM'].coords['sigma_scalp'].values
-alpha_meas_list = RESULTS['FWHM'].coords['alpha_meas'].values
+# sigma_scalp_list = RESULTS['FWHM'].coords['sigma_scalp'].values
+sigma_scalp_list = [0, 1, 5, 10]
+# alpha_meas_list = RESULTS['FWHM'].coords['alpha_meas'].values
+alpha_meas_list = RESULTS['FWHM'].coords['alpha_meas'].values[3:]
 VERTEX_LIST = RESULTS['FWHM'].vertex.values
 
 #%% HELPER FUNCTIONS
@@ -129,8 +131,8 @@ def plot_metric(ax, metric_name, y_label, colors, ls_list):
 
             ax.errorbar(
                 alpha_meas_list,
-                mean.sel(sigma_brain=sigma_brain, sigma_scalp=sigma_scalp, alpha_spatial=alpha_spatial),
-                se.sel(sigma_brain=sigma_brain, sigma_scalp=sigma_scalp, alpha_spatial=alpha_spatial),
+                mean.sel(sigma_brain=sigma_brain, sigma_scalp=sigma_scalp, alpha_spatial=alpha_spatial, alpha_meas=alpha_meas_list),
+                se.sel(sigma_brain=sigma_brain, sigma_scalp=sigma_scalp, alpha_spatial=alpha_spatial, alpha_meas=alpha_meas_list),
                 color=color, lw=lw, ls=l, capsize=capsize, capthick=capthick, label=label
             )
 
@@ -140,12 +142,14 @@ def plot_metric(ax, metric_name, y_label, colors, ls_list):
     ax.grid(True)
 
 #%% PLOT SETTINGS
-fig = plt.figure(figsize=[60, 30]) 
+fig = plt.figure(figsize=[80, 50]) 
 gs = gridspec.GridSpec(2, 3, wspace=0.25, hspace=0.3)  # All rows have equal height
 
 cmap = sns.color_palette("Spectral", as_cmap=True)
-colors = cmap([0.05, 0.25, 0.7, 0.85, 1])
-capsize, capthick, lw = 10, 4, 6
+colors = cmap([0.05, 0.25, 0.7, 1])
+colors = ('red', 'purple', 'green', 'blue')
+
+capsize, capthick, lw = 20, 8, 8
 ls_list = ['-', '-', '--', ':']
 
 #% DEFINE METRICS AND AXES
@@ -176,8 +180,8 @@ for ii, sigma_brain in enumerate(sigma_brain_list):
         alpha_meas_list[0],
         RESULTS['FWHM']
         .mean('vertex')
-        .sel(sigma_brain=sigma_brain, sigma_scalp=sigma_scalp_list[-1], alpha_spatial=alpha_spatial_sb)
-        .isel(alpha_meas=0),
+        .sel(sigma_brain=sigma_brain, sigma_scalp=sigma_scalp_list[-1], 
+            alpha_spatial=alpha_spatial_sb, alpha_meas=alpha_meas_list[0]),
         'k', ls=ls_list[ii], lw=7,
         label=f'$\\sigma_{{brain}}$ = {sigma_brain} mm'
     )
@@ -190,15 +194,15 @@ plt.subplots_adjust(bottom=0.28, top=0.95, left=0.03, right=0.95, hspace=0.4, ws
 fig.legend(handles, labels,
            loc='lower center',
            ncol=3,
-           fontsize=60,
+        #    fontsize=60,
            frameon=False,
-           bbox_to_anchor=(0.5, -0.1))  
+           bbox_to_anchor=(0.5, -0.01))  
 
 #% SAVE FIGURE
 plt.tight_layout() 
 plt.savefig(
     os.path.join(SAVE_PLOT, f'FIG5_task-{TASK}_blob-{BLOB_SIGMA}mm_assb-{alpha_spatial_sb}_asnosb-{alpha_spatial_nosb}_{NOISE_MODEL}_metrics_single_wl.png'),
-    dpi=300
+    dpi=200
 )
 plt.show()
 

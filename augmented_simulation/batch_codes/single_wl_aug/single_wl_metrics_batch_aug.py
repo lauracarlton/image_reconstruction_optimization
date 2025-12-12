@@ -101,20 +101,20 @@ import get_image_metrics as gim
 warnings.filterwarnings('ignore')
 
 #%% SETUP CONFIGS
-ROOT_DIR = os.path.join('/projectnb', 'nphfnirs', 's', 'datasets', 'BSMW_Laura_Miray_2025', 'BS_bids')
+ROOT_DIR = os.path.join('/projectnb', 'nphfnirs', 's', 'datasets', 'BSMW_Laura_Miray_2025', 'BS_bids_v2')
 HEAD_MODEL = 'ICBM152'
-NOISE_MODEL = 'ols'
+NOISE_MODEL = 'ar_irls'
 TASK = 'RS'
 BLOB_SIGMA = 15 * units.mm
 SCALE_FACTOR = 0.02
 WL_IDX = 1
 VERTEX_LIST = [10089, 10453, 14673, 11323, 13685, 11702, 8337]
 EXCLUDED = ['sub-577']
-
+lambda_spatial_depth = 1.6e-9
 #%% SETUP DOWNSTREAM CONFIGS
 CMEAS_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'augmented_data')
 SAVE_DIR = os.path.join(CMEAS_DIR, 'batch_results')
-PROBE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'fw', HEAD_MODEL)
+PROBE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'fw', 'probe')
 
 os.makedirs(SAVE_DIR, exist_ok=True)
 
@@ -130,8 +130,8 @@ sigma_brain = float(sys.argv[3])
 sigma_scalp = float(sys.argv[4])
 # alpha_meas = 10.0
 # alpha_spatial = 0.001
-# sigma_brain = 5.0
-# sigma_scalp = 5.0
+# sigma_brain = 1.0
+# sigma_scalp = 20.0
 
 print(f"Processing alpha_meas - {alpha_meas}, alpha_spatial - {alpha_spatial}, sigma_brain - {sigma_brain}, sigma_scalp - {sigma_scalp}") 
     
@@ -252,8 +252,12 @@ for vv, seed_vertex in enumerate(VERTEX_LIST):
                          dims=('vertex'),
                          coords={'is_brain':('vertex', A_fw.is_brain.values)})
         
-        cov_img_tmp = W_single_wl * np.sqrt(C_meas.sel(wavelength=850).values) # W is pseudo inverse  --- diagonal (faster than W C W.T)
-        cov_img_diag = np.nansum(cov_img_tmp**2, axis=1)
+        cov_img_diag = irf._get_image_noise_post(A_single_wl.sel(wavelength=850).values, C_meas.sel(wavelength=850).values,
+                                                alpha_spatial_depth=alpha_spatial, 
+                                                lambda_spatial_depth=lambda_spatial_depth, 
+                                                alpha_meas=alpha_meas)
+        # cov_img_tmp = W_single_wl * np.sqrt(C_meas.sel(wavelength=850).values) # W is pseudo inverse  --- diagonal (faster than W C W.T)
+        # cov_img_diag = np.nansum(cov_img_tmp**2, axis=1)
         
         if sigma_brain > 0:
             cov_img_diag = sbf.go_from_kernel_space_to_image_space_indirect(cov_img_diag, G)

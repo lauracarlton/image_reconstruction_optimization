@@ -101,19 +101,20 @@ import get_image_metrics as gim
 warnings.filterwarnings('ignore')
 
 #%% SETUP CONFIGS
-ROOT_DIR = os.path.join('/projectnb', 'nphfnirs', 's', 'datasets', 'BSMW_Laura_Miray_2025', 'BS_bids')
+ROOT_DIR = os.path.join('/projectnb', 'nphfnirs', 's', 'datasets', 'BSMW_Laura_Miray_2025', 'BS_bids_v2')
 HEAD_MODEL = 'ICBM152'
-NOISE_MODEL = 'ols'
+NOISE_MODEL = 'ar_irls'
 TASK = 'RS'
 BLOB_SIGMA = 15 * units.mm
 SCALE_FACTOR = 0.02
 VERTEX_LIST = [10089, 10453, 14673, 11323, 13685, 11702, 8337]
 EXCLUDED = ['sub-577']
-
+lambda_spatial_direct = 1e-6
+lambda_spatial_indirect = lambda_spatial_direct * 1.6e-3
 #%% SETUP DOWNSTREAM CONFIGS
 CMEAS_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'augmented_data')
 SAVE_DIR = os.path.join(CMEAS_DIR, 'batch_results')
-PROBE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'fw', HEAD_MODEL)
+PROBE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'fw', 'probe')
 
 os.makedirs(SAVE_DIR, exist_ok=True)
 
@@ -254,10 +255,10 @@ for vv, seed_vertex in enumerate(VERTEX_LIST):
             print(f'\t\t\tsubject: {subject}')
             
             C_meas = C_meas_list.sel(vertex=seed_vertex, subject=subject)
-            C_meas_dir = C_meas.stack(measurement=('channel', 'wavelength')).sortby('wavelength')
+            C_meas = C_meas.stack(measurement=('channel', 'wavelength')).sortby('wavelength')
 
             W_direct, D_direct, F_direct = irf.calculate_W(A_dual_wl, alpha_meas, alpha_spatial, DIRECT=True,
-                                       C_meas_flag=True, C_meas=C_meas_dir, D=D_direct, F=F_direct)
+                                       C_meas_flag=True, C_meas=C_meas, D=D_direct, F=F_direct)
             
             W_indirect, D_indirect, F_indirect = irf.calculate_W(A_single_wl, alpha_meas, alpha_spatial, DIRECT=False,
                                          C_meas_flag=True, C_meas=C_meas, D=D_indirect, F=F_indirect)
@@ -299,10 +300,19 @@ for vv, seed_vertex in enumerate(VERTEX_LIST):
                             )
         
             if sigma_brain > 0:
-                X_noise_direct = irf.get_image_noise(C_meas_dir, X_direct, W_direct, SB=True, DIRECT=True, G=G)
+                # X_noise_direct = irf.get_image_noise(C_meas, X_direct, W_direct, SB=True, DIRECT=True, G=G)
+                X_noise_direct = irf.get_image_noise_posterior(A_dual_wl, C_meas, 
+                                                                alpha_meas=alpha_meas,
+                                                                alpha_spatial_depth=alpha_spatial,
+                                                                lambda_spatial_depth=lambda_spatial_direct, 
+                                                                DIRECT=True, SB=True, G=G)
             else:                                    
-                X_noise_direct = irf.get_image_noise(C_meas_dir, X_direct, W_direct, SB=False, DIRECT=True, G=None)
-
+                # X_noise_direct = irf.get_image_noise(C_meas_dir, X_direct, W_direct, SB=False, DIRECT=True, G=None)
+                X_noise_direct = irf.get_image_noise_posterior(A_dual_wl, C_meas, 
+                                                                alpha_meas=alpha_meas,
+                                                                alpha_spatial_depth=alpha_spatial,
+                                                                lambda_spatial_depth=lambda_spatial_direct, 
+                                                                DIRECT=True, SB=False, G=None)
 
             ##### INDIRECT METHOD 
             y_wl0 = y[:n_chs]
@@ -329,10 +339,19 @@ for vv, seed_vertex in enumerate(VERTEX_LIST):
             X_indirect = xr.dot(einv, X_od/units.mm, dims=["wavelength"])
                 
             if sigma_brain > 0:
-                X_noise_indirect = irf.get_image_noise(C_meas_dir, X_indirect, W_indirect, SB=True, DIRECT=False, G=G)
+                # X_noise_indirect = irf.get_image_noise(C_meas_dir, X_indirect, W_indirect, SB=True, DIRECT=False, G=G)
+                X_noise_indirect = irf.get_image_noise_posterior(A_single_wl, C_meas, 
+                                                                alpha_meas=alpha_meas,
+                                                                alpha_spatial_depth=alpha_spatial,
+                                                                lambda_spatial_depth=lambda_spatial_indirect, 
+                                                                DIRECT=False, SB=True, G=G)
             else:                                    
-                X_noise_indirect = irf.get_image_noise(C_meas_dir, X_indirect, W_indirect, SB=False, DIRECT=False, G=None)
-    
+                # X_noise_indirect = irf.get_image_noise(C_meas_dir, X_indirect, W_indirect, SB=False, DIRECT=False, G=None)
+                X_noise_indirect = irf.get_image_noise_posterior(A_single_wl, C_meas, 
+                                                            alpha_meas=alpha_meas,
+                                                            alpha_spatial_depth=alpha_spatial,
+                                                            lambda_spatial_depth=lambda_spatial_indirect,
+                                                            DIRECT=False, SB=False, G=None)
             
             if all_subj_X_hrf_mag_direct is None:
                 
@@ -419,7 +438,7 @@ for vv, seed_vertex in enumerate(VERTEX_LIST):
         # GET METRICS FOR DIRECT
         X_brain = X_hrf_mag_mean_weighted_direct[X_hrf_mag_mean_weighted_direct.is_brain.values,:]
         X_scalp = X_hrf_mag_mean_weighted_direct[~X_hrf_mag_mean_weighted_direct.is_brain.values,:]
-        X_std = X_stderr_weighted_direct[X_stderr_weighted_direct.is_brain.values,:]
+        X_std = X_stderr_weighted_direct[:,X_stderr_weighted_direct.is_brain.values]
         
         ROI = gim.get_ROI(X_brain.sel(chromo=chromo), 0.5)
         ROI_expected = gim.get_ROI(expected_contrast, 0.5)

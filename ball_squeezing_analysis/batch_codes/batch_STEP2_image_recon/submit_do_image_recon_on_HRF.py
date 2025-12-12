@@ -43,7 +43,7 @@ import os
 import subprocess
 
 # --------------------- CONFIG ---------------------
-ROOT_DIR = os.path.join("/projectnb", "nphfnirs", "s", "datasets", "BSMW_Laura_Miray_2025", "BS_bids")
+ROOT_DIR = os.path.join("/projectnb", "nphfnirs", "s", "datasets", "BSMW_Laura_Miray_2025", "BS_bids_v2")
 EXCLUDED = ["sub-538", "sub-549", "sub-547"]
 
 SHELL_SCRIPT = os.path.join(

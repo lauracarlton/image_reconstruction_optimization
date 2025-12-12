@@ -72,28 +72,31 @@ import spatial_basis_func as sbf  # noqa: E402
 import image_recon_func as irf  # noqa: E402
 
 # %% set up config parameters
-ROOT_DIR = os.path.join("/projectnb", "nphfnirs", "s", "datasets", "BSMW_Laura_Miray_2025", "BS_bids")
+ROOT_DIR = os.path.join("/projectnb", "nphfnirs", "s", "datasets", "BSMW_Laura_Miray_2025", "BS_bids_v2")
 REC_STR = "conc_o"
 TASK = "BS"
-NOISE_MODEL = "ols"
+NOISE_MODEL = "ar_irls"
 FNAME_FLAG = "mag"
 C_MEAS_FLAG = True
-PLOT_SAVE = False
+PLOT_SAVE = True
 T_WIN = [5, 8]
 SPATIAL_SMOOTHING = False
 SIGMA_SMOOTHING = 50
+optional_flag = ''
 
 SCALE = 1
-FLAG_HBO_LIST = [True]  # , False] #, False]
+FLAG_HBO_LIST = [True, False] 
 FLAG_BRAIN_LIST = [True]  # , False]
-FLAG_IMG_LIST = ["tstat", "mag"]  # , 'noise'] #['mag', 'tstat', 'noise'] #, 'noise'
-FLAG_CONDITION_LIST = ["right"]  # , 'left']
+FLAG_IMG_LIST = ["tstat", "mag", "stderr", "var_btw", "var_within"]  # , 'noise'] #['mag', 'tstat', 'noise'] #, 'noise'
+FLAG_CONDITION_LIST = ["right", "left"] 
+lambda_spatial_depth_direct = 1e-6 
+lambda_spatial_depth_indirect = lambda_spatial_depth_direct * 1.6e-3 
 
 cfg_list = [
-    {"alpha_meas": 1e4, "alpha_spatial": 1e-3, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e2, "alpha_spatial": 1e-3, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e4, "alpha_spatial": 1e-2, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e2, "alpha_spatial": 1e-2, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-3, "lambda_spatial_depth": lambda_spatial_depth_indirect, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-3, "lambda_spatial_depth": lambda_spatial_depth_direct, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-2, "lambda_spatial_depth": lambda_spatial_depth_indirect, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-2, "lambda_spatial_depth": lambda_spatial_depth_direct, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
 ]
 
 if SPATIAL_SMOOTHING:
@@ -106,7 +109,7 @@ SAVE_DIR = os.path.join(ROOT_DIR, "derivatives", "cedalion", "figures", "image_s
 
 os.makedirs(SAVE_DIR, exist_ok=True)
 
-PROBE_DIR = os.path.join(ROOT_DIR, "derivatives", "cedalion", "fw", "ICBM152")
+PROBE_DIR = os.path.join(ROOT_DIR, "derivatives", "cedalion", "fw", "probe")
 
 # %% load head model
 head, PARCEL_DIR = irf.load_head_model("ICBM152", with_parcels=True)
@@ -120,8 +123,7 @@ M = sbf.get_sensitivity_mask(Adot, threshold, wl_idx)
 surf = cdc.VTKSurface.from_trimeshsurface(head.brain)
 surf = pv.wrap(surf.mesh)
 
-for cfg in cfg_list[:1]:
-
+for cfg in cfg_list:
     all_trial_X_hrf_mag = None
     # pdb.set_trace()
     F = None
@@ -132,8 +134,11 @@ for cfg in cfg_list[:1]:
     SB = cfg["SB"]
     sigma_brain = cfg["sigma_brain"]
     sigma_scalp = cfg["sigma_scalp"]
+    # alpha_meas = cfg["alpha_meas"]
+    # alpha_spatial = cfg["alpha_spatial"]
     alpha_meas = cfg["alpha_meas"]
-    alpha_spatial = cfg["alpha_spatial"]
+    alpha_spatial_depth = cfg["alpha_spatial_depth"]
+    lambda_spatial_depth = cfg["lambda_spatial_depth"]
 
     if DIRECT:
         direct_name = "direct"
@@ -145,16 +150,27 @@ for cfg in cfg_list[:1]:
     else:
         Cmeas_name = "noCmeas"
 
+    # if SB:
+    #     filepath = os.path.join(
+    #         DATA_DIR,
+    #         f"task-{TASK}_image_hrf_{FNAME_FLAG}_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_Cmeas_{NOISE_MODEL}{smoothing_name}{optional_flag}.pkl.gz",
+    #     )
+    # else:
+    #     filepath = os.path.join(
+    #         DATA_DIR,
+    #         f"task-{TASK}_image_hrf_{FNAME_FLAG}_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_{direct_name}_Cmeas_{NOISE_MODEL}{smoothing_name}{optional_flag}.pkl.gz",
+    #     )
     if SB:
         filepath = os.path.join(
             DATA_DIR,
-            f"task-{TASK}_image_hrf_{FNAME_FLAG}_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_Cmeas_{NOISE_MODEL}{smoothing_name}.pkl.gz",
+            f"task-{TASK}_image_hrf_{FNAME_FLAG}_as-{alpha_spatial_depth:.0e}_ls-{lambda_spatial_depth:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_Cmeas_{NOISE_MODEL}{smoothing_name}{optional_flag}.pkl.gz",
         )
     else:
         filepath = os.path.join(
             DATA_DIR,
-            f"task-{TASK}_image_hrf_{FNAME_FLAG}_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_{direct_name}_Cmeas_{NOISE_MODEL}{smoothing_name}.pkl.gz",
+            f"task-{TASK}_image_hrf_{FNAME_FLAG}_as-{alpha_spatial_depth:.0e}_ls-{lambda_spatial_depth:.0e}_am-{alpha_meas:.0e}_{direct_name}_Cmeas_{NOISE_MODEL}{smoothing_name}{optional_flag}.pkl.gz",
         )
+
 
     with gzip.open(filepath, "rb") as f:
         results = pickle.load(f)
@@ -162,6 +178,8 @@ for cfg in cfg_list[:1]:
     all_trial_X_tstat = results["X_tstat"]
     all_trial_X_hrf_mag_weighted = results["X_hrf_ts_weighted"]
     all_trial_X_stderr = results["X_std_err"]
+    all_trial_X_btw= results["X_mse_between"]
+    all_trial_X_within = results["X_mse_within"]
     if FNAME_FLAG == "ts":
         all_trial_X_tstat = all_trial_X_tstat.sel(time=slice(T_WIN[0], T_WIN[1])).mean("time")
         all_trial_X_hrf_mag_weighted = all_trial_X_hrf_mag_weighted.sel(time=slice(T_WIN[0], T_WIN[1])).mean("time")
@@ -181,18 +199,22 @@ for cfg in cfg_list[:1]:
                         foo_img = all_trial_X_tstat.sel(trial_type=flag_condition).copy()
                         title_str = "t-stat"
                     elif flag_img == "mag":
-
                         foo_img = all_trial_X_hrf_mag_weighted.sel(trial_type=flag_condition).copy()
                         title_str = "magnitude"
-                    elif flag_img == "noise":
+                    elif flag_img == "stderr":
                         foo_img = all_trial_X_stderr.sel(trial_type=flag_condition).copy()
-                        title_str = "noise"
-
+                        title_str = "std_err"
+                    elif flag_img == "var_btw":
+                        foo_img = all_trial_X_btw.sel(trial_type=flag_condition).copy()
+                        title_str = "between subj var"
+                    elif flag_img == "var_within":
+                        foo_img = all_trial_X_within.sel(trial_type=flag_condition).copy()
+                        title_str = "within subj var"
                     foo_img = foo_img.pint.dequantify()
                     foo_img = foo_img.transpose("chromo", "vertex")
 
                     if flag_brain:
-                        title_str = title_str + " brain"
+                        title_str += " brain "
                         surface = "brain"
                         foo_img = foo_img[:, Adot.is_brain.values]
                         foo_img[:, ~M[M.is_brain.values]] = np.nan
@@ -200,7 +222,7 @@ for cfg in cfg_list[:1]:
                         surf = pv.wrap(surf.mesh)
 
                     else:
-                        title_str = title_str + " scalp"
+                        title_str += " scalp "
                         surface = "scalp"
                         foo_img = foo_img[:, ~Adot.is_brain.values]
                         foo_img[:, ~M[~M.is_brain.values]] = np.nan
@@ -209,17 +231,21 @@ for cfg in cfg_list[:1]:
 
                     masked = foo_img.sel(chromo="HbO")
                     masked = masked.where(np.isfinite(masked))
-                    clim = (-masked.max(skipna=True).values * SCALE, masked.max(skipna=True).values * SCALE)
+                    if flag_img == 'stderr' or flag_img == 'var_btw' or flag_img == 'var_within':
+                        clim = (masked.min(skipna=True).values * SCALE, masked.max(skipna=True).values * SCALE)
+                    else:
+                        clim = (-masked.max(skipna=True).values * SCALE, masked.max(skipna=True).values * SCALE)
 
                     if flag_hbo:
-                        title_str = flag_condition + ": HbO"
+                        title_str = title_str + flag_condition + ": HbO"
                         foo_img = foo_img.sel(chromo="HbO")
                         chromo = "HbO"
                     else:
-                        title_str = flag_condition + ": HbR"
+                        title_str =  title_str + flag_condition + ": HbR"
                         foo_img = foo_img.sel(chromo="HbR")
                         chromo = "HbR"
 
+                    title_str += f' lambda_spatial_depth = {lambda_spatial_depth:0.1e}'
                     p.subplot(0, 0)
                     p.add_mesh(
                         surf,
@@ -235,15 +261,15 @@ for cfg in cfg_list[:1]:
 
                     if PLOT_SAVE:
                         if SB:
-                            img_folder = f"images_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_{Cmeas_name}"
+                            img_folder = f"images_as-{alpha_spatial_depth:.0e}_ls-{lambda_spatial_depth:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_{Cmeas_name}"
                         else:
-                            img_folder = f"images_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_{direct_name}_{Cmeas_name}"
+                            img_folder = f"images_as-{alpha_spatial_depth:.0e}_ls-{lambda_spatial_depth:.0e}_am-{alpha_meas:.0e}_{direct_name}_{Cmeas_name}"
 
                         save_dir_tmp = os.path.join(SAVE_DIR, img_folder)
                         if not os.path.exists(save_dir_tmp):
                             os.makedirs(save_dir_tmp)
 
-                        file_name = f"IMG_task-{TASK}_{FNAME_FLAG}_{flag_condition}_{flag_img}_{chromo}_{surface}_scale-{SCALE}{smoothing_name}.png"
+                        file_name = f"IMG_task-{TASK}_{FNAME_FLAG}_{flag_condition}_{flag_img}_{chromo}_{surface}_scale-{SCALE}{smoothing_name}{optional_flag}.png"
                         p.screenshot(os.path.join(save_dir_tmp, file_name))
                         p.close()
                     else:

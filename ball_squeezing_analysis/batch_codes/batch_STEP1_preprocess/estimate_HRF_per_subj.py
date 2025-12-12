@@ -117,7 +117,7 @@ subject = str(sys.argv[1])
 # subject = 'sub-618'
 
 # %% Initial root directory and analysis parameters
-ROOT_DIR = os.path.join("/projectnb", "nphfnirs", "s", "datasets", "BSMW_Laura_Miray_2025", "BS_bids")
+ROOT_DIR = os.path.join("/projectnb", "nphfnirs", "s", "datasets", "BSMW_Laura_Miray_2025", "BS_bids_v2")
 RUN_PREPROCESS = True
 TASK = "BS"
 RUN_HRF_ESTIMATION = True
@@ -159,7 +159,7 @@ cfg_GLM = {
     "t_delta": 1 * units.s,  # for seq of Gauss basis func - the temporal spacing between consecutive gaussians
     "t_std": 1 * units.s,
     "t_pre": 2 * units.s,
-    "t_post": 10 * units.s,
+    "t_post": 15 * units.s,
 }
 
 cfg_dataset = {

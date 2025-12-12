@@ -1,7 +1,7 @@
 #!/bin/bash -l
 #$ -P nphfnirs
 #$ -N  BS_IR
-#$ -pe omp 16
+#$ -pe omp 4
 #$ -l h_rt=12:00:00
 
 #$ -o /projectnb/nphfnirs/s/users/lcarlton/ANALYSIS_CODE/imaging_paper_figure_code/ball_squeezing_analysis/batch_codes/batch_STEP2_image_recon/output/

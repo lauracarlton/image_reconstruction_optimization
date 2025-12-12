@@ -110,7 +110,7 @@ import get_image_metrics as gim
 warnings.filterwarnings('ignore')
 
 #%% SETUP CONFIGS
-ROOT_DIR = os.path.join('/projectnb', 'nphfnirs', 's', 'datasets', 'BSMW_Laura_Miray_2025', 'BS_bids')
+ROOT_DIR = os.path.join('/projectnb', 'nphfnirs', 's', 'datasets', 'BSMW_Laura_Miray_2025', 'BS_bids_v2')
 HEAD_MODEL = 'ICBM152'
 NOISE_MODEL = 'ols'
 TASK = 'RS'

@@ -108,10 +108,13 @@ import processing_func as pf
 
 warnings.filterwarnings('ignore')
 
+#%%
+subject = sys.argv[1]
+# subject = 'sub-618'
+
 #%% CONFIG 
 # DATA STORAGE PARAMS
 ROOT_DIR = os.path.join('/projectnb', 'nphfnirs', 's', 'datasets', 'BSMW_Laura_Miray_2025', 'BS_bids_v2')
-EXCLUDED = ['sub-577'] # does not contain RS data 
 TASK = "RS"
 
 # HEAD PARAMS
@@ -138,10 +141,7 @@ SNR_THRESH = 5 # signal to noise ratio threshold
 SAVE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'augmented_data')
 os.makedirs(SAVE_DIR, exist_ok=True)
 
-PROBE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'fw', HEAD_MODEL)
-
-dirs = os.listdir(ROOT_DIR)
-SUBJECT_LIST = [d for d in dirs if 'sub' in d and d not in EXCLUDED]
+PROBE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'fw', 'probe')
 
 cmap = plt.cm.get_cmap("jet", 256)
 
@@ -181,7 +181,7 @@ cfg_mse = { # values used to re-scale the MSE values for noisy channels in OD
 
 #%% DEFINE THE SYNTHETIC HRF
 # load in a reference snirf file
-subj_temp =  f'{SUBJECT_LIST[0]}/nirs/{SUBJECT_LIST[0]}_task-{TASK}_run-01_nirs.snirf'
+subj_temp =  f'{subject}/nirs/{subject}_task-{TASK}_run-01_nirs.snirf'
 file_name = os.path.join(ROOT_DIR, subj_temp)
 rec = io.read_snirf(file_name)[0]
 
@@ -211,105 +211,102 @@ tbasis = synthetic_hrf.generate_hrf(time_xr, STIM_DUR,
 #%% AUGMENT DATA AND GET THE VARIANCE 
 # initialize the array 
 meas = rec['amp'].stack(measurement = ['channel', 'wavelength']).sortby('wavelength').measurement
-C_meas_list = xr.DataArray(np.zeros([len(Adot.channel), len(Adot.wavelength), len(SUBJECT_LIST), len(VERTEX_LIST)]),
-                           dims = ['channel', 'wavelength', 'subject', 'vertex'],
+C_meas_list = xr.DataArray(np.zeros([len(Adot.channel), len(Adot.wavelength), len(VERTEX_LIST)]),
+                           dims = ['channel', 'wavelength', 'vertex'],
                            coords={'channel': Adot.channel.values, 
                                    'wavelength': Adot.wavelength,
-                                   'subject': SUBJECT_LIST, 
                                    'vertex': VERTEX_LIST})
 
-for ss, subject in enumerate(SUBJECT_LIST):
     
-    print(f'subject: {ss+1}/{len(SUBJECT_LIST)}')
     
-    # load in the data
-    subj_temp =  f'{subject}/nirs/{subject}_task-{TASK}_run-01_nirs.snirf'
-    file_name = os.path.join(ROOT_DIR, subj_temp)
-    print(file_name)
-    rec = io.read_snirf(file_name)[0]
+# load in the data
+subj_temp =  f'{subject}/nirs/{subject}_task-{TASK}_run-01_nirs.snirf'
+file_name = os.path.join(ROOT_DIR, subj_temp)
+print(file_name)
+rec = io.read_snirf(file_name)[0]
 
-    # replace an NaNs in the data
-    rec['amp'] = rec['amp'].sel(channel=channel)
-    rec['amp'] = rec['amp'].where( ~rec['amp'].isnull(), 1e-18 )
-    rec['amp'] = rec['amp'].where( rec['amp']>0, 1e-18 )
-   
-    # if first value is 1e-18 then replace with second value
-    indices = np.where(rec['amp'][:,0,0] == 1e-18)
-    rec['amp'][indices[0],0,0] = rec['amp'][indices[0],0,1]
-    indices = np.where(rec['amp'][:,1,0] == 1e-18)
-    rec['amp'][indices[0],1,0] = rec['amp'][indices[0],1,1]
-        
-    rec['amp'] = rec['amp'].pint.dequantify().pint.quantify('V')
+# replace an NaNs in the data
+rec['amp'] = rec['amp'].sel(channel=channel)
+rec['amp'] = rec['amp'].where( ~rec['amp'].isnull(), 1e-18 )
+rec['amp'] = rec['amp'].where( rec['amp']>0, 1e-18 )
 
-    # then we calculate the masks for each metric: SD distance and mean amplitude
-    rec, chs_pruned = pf.prune_channels(rec)
-    rec['od'] = nirs.int2od(rec['amp'])
-    rec['od'] = xr.where(np.isinf(rec['od']), 1e-16, rec['od'])
-    rec['od'] = xr.where(np.isnan(rec['od']), 1e-16, rec['od'])
+# if first value is 1e-18 then replace with second value
+indices = np.where(rec['amp'][:,0,0] == 1e-18)
+rec['amp'][indices[0],0,0] = rec['amp'][indices[0],0,1]
+indices = np.where(rec['amp'][:,1,0] == 1e-18)
+rec['amp'][indices[0],1,0] = rec['amp'][indices[0],1,1]
+    
+rec['amp'] = rec['amp'].pint.dequantify().pint.quantify('V')
 
-    for vertex in VERTEX_LIST:
-        
-        print(f'\tvertex = {vertex}')
-        # make the blob of activation 
-        blob_img = synthetic_hrf.build_blob_from_seed_vertex(head, vertex = vertex, scale = BLOB_SIGMA)
+# then we calculate the masks for each metric: SD distance and mean amplitude
+rec, chs_pruned = pf.prune_channels(rec)
+rec['od'] = nirs.int2od(rec['amp'])
+rec['od'] = xr.where(np.isinf(rec['od']), 1e-16, rec['od'])
+rec['od'] = xr.where(np.isnan(rec['od']), 1e-16, rec['od'])
 
-        # project back to channel space using the forward model
-        syn_HRF_chan = synthetic_hrf.hrfs_from_image_reco(blob_img, tbasis, Adot)
-        syn_HRF_chan = xr.where(np.isnan(syn_HRF_chan), 1e-16, syn_HRF_chan)
-        syn_HRF_chan = xr.where(np.isinf(syn_HRF_chan), 1e-16, syn_HRF_chan)
+for vertex in VERTEX_LIST:
+    
+    print(f'\tvertex = {vertex}')
+    # make the blob of activation 
+    blob_img = synthetic_hrf.build_blob_from_seed_vertex(head, vertex = vertex, scale = BLOB_SIGMA)
 
-        # scale the weights by the scale factor
-        syn_HRF_chan_scaled = syn_HRF_chan / syn_HRF_chan.sel(wavelength=850).max('time').max('channel').values * SCALE_FACTOR
+    # project back to channel space using the forward model
+    syn_HRF_chan = synthetic_hrf.hrfs_from_image_reco(blob_img, tbasis, Adot)
+    syn_HRF_chan = xr.where(np.isnan(syn_HRF_chan), 1e-16, syn_HRF_chan)
+    syn_HRF_chan = xr.where(np.isinf(syn_HRF_chan), 1e-16, syn_HRF_chan)
 
-        # build the stim dataframe
-        HRF_stim_df = synthetic_hrf.build_stim_df(num_stims=15, stim_dur=TRANGE_HRF[1], trial_types=['stim'], min_interval=10, max_interval=20)
-        while HRF_stim_df['onset'].iloc[-1] + TRANGE_HRF[1] > rec['od'].time[-1]:
-            HRF_stim_df = HRF_stim_df[:-1]
-        
-        # add the HRF to the OD timeseries according to the stim dataframe
-        rec['od_wHRF'] = synthetic_hrf.add_hrf_to_od(rec['od'], syn_HRF_chan_scaled, HRF_stim_df)
-        rec['od_wHRF'].time.attrs['units'] = units.s
-        
-        # do TDDR and lowpass filter if the noise model is OLS
-        if cfg_GLM['noise_model'] == 'ols':
-            rec['od_wHRF'] = motion.tddr(rec['od_wHRF'])
-            rec['od_wHRF'] = rec['od_wHRF'].where( ~rec['od_wHRF'].isnull(), 1e-18 ) 
+    # scale the weights by the scale factor
+    syn_HRF_chan_scaled = syn_HRF_chan / syn_HRF_chan.sel(wavelength=850).max('time').max('channel').values * SCALE_FACTOR
 
-            # low pass filter the data at 0.5 Hz
-            rec["od_wHRF"] = freq_filter(rec["od_wHRF"], 
-                                        0*units.Hz, 
-                                        0.5*units.Hz)
+    # build the stim dataframe
+    HRF_stim_df = synthetic_hrf.build_stim_df(num_stims=15, stim_dur=TRANGE_HRF[1], trial_types=['stim'], min_interval=10, max_interval=20)
+    while HRF_stim_df['onset'].iloc[-1] + TRANGE_HRF[1] > rec['od'].time[-1]:
+        HRF_stim_df = HRF_stim_df[:-1]
+    
+    # add the HRF to the OD timeseries according to the stim dataframe
+    rec['od_wHRF'] = synthetic_hrf.add_hrf_to_od(rec['od'], syn_HRF_chan_scaled, HRF_stim_df)
+    rec['od_wHRF'].time.attrs['units'] = units.s
+    
+    # do TDDR and lowpass filter if the noise model is OLS
+    if cfg_GLM['noise_model'] == 'ols':
+        rec['od_wHRF'] = motion.tddr(rec['od_wHRF'])
+        rec['od_wHRF'] = rec['od_wHRF'].where( ~rec['od_wHRF'].isnull(), 1e-18 ) 
 
-        # convert to concentration
-        rec['conc_o'] = nirs.od2conc(rec['od_wHRF'], rec.geo3d, dpf)
+        # low pass filter the data at 0.5 Hz
+        rec["od_wHRF"] = freq_filter(rec["od_wHRF"], 
+                                    0*units.Hz, 
+                                    0.5*units.Hz)
 
-        # run the GLM 
-        results, hrf_estimate, hrf_mse = pf.GLM([rec['conc_o']], cfg_GLM, rec.geo3d, chs_pruned, [HRF_stim_df])    
-       
-        # convert the MSE back into OD
-        hrf_mse = hrf_mse.transpose('channel', 'time', 'chromo', 'trial_type').pint.dequantify().pint.quantify('molar**2')
-        od_mse = xr.dot(E**2, hrf_mse, dim =['chromo']) * 1 * units.mm**2
+    # convert to concentration
+    rec['conc_o'] = nirs.od2conc(rec['od_wHRF'], rec.geo3d, dpf)
 
-        # set bad values in mse_t to the bad value threshold
-        amp_vals = rec['amp'].mean('time').min('wavelength') # take the minimum across wavelengths
-        idx_amp = np.where(amp_vals < cfg_mse['mse_amp_thresh'])[0]
-        idx_sat = np.where(chs_pruned == 0.0)[0]
-        bad_indices = np.unique(np.concat([idx_amp, idx_sat]))
-        
-        od_mse.loc[:,channel.isel(channel=bad_indices),:] = cfg_mse['mse_val_for_bad_data']
-        od_mse = xr.where(od_mse < cfg_mse['mse_min_thresh'], cfg_mse['mse_min_thresh'], od_mse)
+    # run the GLM 
+    results, hrf_estimate, hrf_mse = pf.GLM([rec['conc_o']], cfg_GLM, rec.geo3d, chs_pruned, [HRF_stim_df])    
+    
+    # convert the MSE back into OD
+    hrf_mse = hrf_mse.transpose('channel', 'time', 'chromo', 'trial_type').pint.dequantify().pint.quantify('molar**2')
+    od_mse = xr.dot(E**2, hrf_mse, dim =['chromo']) * 1 * units.mm**2
 
-        # take the mean MSE over the T_WIN
-        od_mse_mag = od_mse.sel(time=slice(T_WIN[0], T_WIN[1])).mean('time')
+    # set bad values in mse_t to the bad value threshold
+    amp_vals = rec['amp'].mean('time').min('wavelength') # take the minimum across wavelengths
+    idx_amp = np.where(amp_vals < cfg_mse['mse_amp_thresh'])[0]
+    idx_sat = np.where(chs_pruned == 0.0)[0]
+    bad_indices = np.unique(np.concat([idx_amp, idx_sat]))
+    
+    od_mse.loc[:,channel.isel(channel=bad_indices),:] = cfg_mse['mse_val_for_bad_data']
+    od_mse = xr.where(od_mse < cfg_mse['mse_min_thresh'], cfg_mse['mse_min_thresh'], od_mse)
 
-        # save C_meas for vertex and subject 
-        C_meas_list.loc[:,:, subject, vertex] = od_mse_mag.squeeze()
-        
+    # take the mean MSE over the T_WIN
+    od_mse_mag = od_mse.sel(time=slice(T_WIN[0], T_WIN[1])).mean('time')
+
+    # save C_meas for vertex and subject 
+    C_meas_list.loc[:,:, vertex] = od_mse_mag.squeeze()
+    
 # save the C_meas as the within subject variance for all subjects  
 print('Saving the data')
-with open(os.path.join(SAVE_DIR, f"C_meas_subj_task-{TASK}_blob-{BLOB_SIGMA.magnitude}mm_scale-{SCALE_FACTOR}_{cfg_GLM['noise_model']}.pkl"), 'wb') as f:
+with open(os.path.join(SAVE_DIR, f"C_meas_sub-{subject}_task-{TASK}_blob-{BLOB_SIGMA.magnitude}mm_scale-{SCALE_FACTOR}_{cfg_GLM['noise_model']}.pkl"), 'wb') as f:
     pickle.dump(C_meas_list, f)
 
-print('Complete.')
+print('Job Complete.')
 
 # %%
