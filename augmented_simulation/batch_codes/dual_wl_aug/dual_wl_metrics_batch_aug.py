@@ -109,11 +109,11 @@ BLOB_SIGMA = 15 * units.mm
 SCALE_FACTOR = 0.02
 VERTEX_LIST = [10089, 10453, 14673, 11323, 13685, 11702, 8337]
 EXCLUDED = ['sub-577']
-lambda_spatial_direct = 1e-6
-lambda_spatial_indirect = lambda_spatial_direct * 1.6e-3
+lambda_R = 1e-6
+
 #%% SETUP DOWNSTREAM CONFIGS
 CMEAS_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'augmented_data')
-SAVE_DIR = os.path.join(CMEAS_DIR, 'batch_results')
+SAVE_DIR = os.path.join(CMEAS_DIR, 'batch_results', 'dual_wl')
 PROBE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'fw', 'probe')
 
 os.makedirs(SAVE_DIR, exist_ok=True)
@@ -130,8 +130,8 @@ alpha_meas = float(sys.argv[1])
 alpha_spatial = float(sys.argv[2])
 sigma_brain = float(sys.argv[3])
 sigma_scalp = float(sys.argv[4])
-# alpha_meas = 0.1
-# alpha_spatial = 0.01
+# alpha_meas = 1e2
+# alpha_spatial = 0.001
 # sigma_brain = 0.0
 # sigma_scalp = 0.0
 
@@ -180,7 +180,6 @@ contrast_ratio_HbO_indirect = FWHM_HbO_direct.copy()
 crosstalk_brainVscalp_HbO_indirect = FWHM_HbO_direct.copy()
 localization_error_HbO_indirect = FWHM_HbO_direct.copy()
 
-
 P_direct = xr.DataArray(np.zeros([len(chromo_list), len(VERTEX_LIST)]),
                       dims = ['chromo', 'vertex'],
                       coords = {
@@ -202,8 +201,14 @@ if sigma_brain > 0 and sigma_scalp > 0:
         with open(G_brain_path, 'rb') as f:
             G_brain = pickle.load(f)
     else:
-        brain_downsampled = sbf.downsample_mesh(head.brain.vertices, M[M.is_brain], sigma_brain*units.mm)
-        G_brain = sbf.get_kernel_matrix(brain_downsampled, head.brain.vertices, sigma_brain*units.mm)
+        brain_downsampled = sbf.downsample_mesh(head.brain.vertices, 
+                                                M[M.is_brain], 
+                                                sigma_brain*units.mm)
+
+        G_brain = sbf.get_kernel_matrix(brain_downsampled, 
+                                        head.brain.vertices,
+                                        sigma_brain*units.mm)
+
         with open(G_brain_path, 'wb') as f:
                 pickle.dump(G_brain, f)
 
@@ -212,32 +217,41 @@ if sigma_brain > 0 and sigma_scalp > 0:
         with open(G_scalp_path, 'rb') as f:
             G_scalp = pickle.load(f)
     else:
-        scalp_downsampled = sbf.downsample_mesh(head.scalp.vertices, M[~M.is_brain], sigma_scalp*units.mm)
-        G_scalp = sbf.get_kernel_matrix(scalp_downsampled, head.scalp.vertices, sigma_scalp*units.mm)
+        scalp_downsampled = sbf.downsample_mesh(head.scalp.vertices, 
+                                                M[~M.is_brain], 
+                                                sigma_scalp*units.mm)
+
+        G_scalp = sbf.get_kernel_matrix(scalp_downsampled, 
+                                        head.scalp.vertices, 
+                                        sigma_scalp*units.mm)
+
         with open(G_scalp_path, 'wb') as f:
                 pickle.dump(G_scalp, f)
 
     G = {'G_brain': G_brain,
          'G_scalp': G_scalp}
-    
-    
+
+    SB=True
     H_single_wl = sbf.get_H(G, Adot)
     H_dual_wl = sbf.get_H_stacked(G, Adot_stacked)
     A_single_wl = H_single_wl.copy()
     A_dual_wl = H_dual_wl.copy()
-    A_1wl = H_single_wl.sel(wavelength=850)
     nkernels_brain = G_brain.kernel.shape[0]
     nkernels_scalp = G_scalp.kernel.shape[0]
 
 else:
     G = None
+    SB=False
     A_single_wl = Adot.copy()
     A_dual_wl = Adot_stacked.copy()
      
 F_direct = None
 D_direct = None
+max_eig_direct = None
+
 F_indirect = None
 D_indirect = None
+max_eig_indirect = None
 
 for vv, seed_vertex in enumerate(VERTEX_LIST):
     
@@ -257,12 +271,30 @@ for vv, seed_vertex in enumerate(VERTEX_LIST):
             C_meas = C_meas_list.sel(vertex=seed_vertex, subject=subject)
             C_meas = C_meas.stack(measurement=('channel', 'wavelength')).sortby('wavelength')
 
-            W_direct, D_direct, F_direct = irf.calculate_W(A_dual_wl, alpha_meas, alpha_spatial, DIRECT=True,
-                                       C_meas_flag=True, C_meas=C_meas, D=D_direct, F=F_direct)
+            W_direct, D_direct, F_direct, max_eig_direct = irf.calculate_W(A_dual_wl, 
+                                                                        lambda_R=lambda_R, 
+                                                                        alpha_meas=alpha_meas,
+                                                                        alpha_spatial=alpha_spatial, 
+                                                                        DIRECT=True, 
+                                                                        C_meas_flag=True, 
+                                                                        C_meas=C_meas, 
+                                                                        D=D_direct,
+                                                                        F=F_direct, 
+                                                                        max_eig=max_eig_direct)
             
-            W_indirect, D_indirect, F_indirect = irf.calculate_W(A_single_wl, alpha_meas, alpha_spatial, DIRECT=False,
-                                         C_meas_flag=True, C_meas=C_meas, D=D_indirect, F=F_indirect)
-           
+        
+            W_indirect, D_indirect, F_indirect, max_eig_indirect = irf.calculate_W(A_single_wl, 
+                                                                                lambda_R=lambda_R, 
+                                                                                alpha_meas=alpha_meas,
+                                                                                alpha_spatial=alpha_spatial,
+                                                                                DIRECT=False, 
+                                                                                C_meas_flag=True, 
+                                                                                C_meas=C_meas, 
+                                                                                D=D_indirect, 
+                                                                                F=F_indirect, 
+                                                                                max_eig=max_eig_indirect)
+
+
             # want to use a single point absorber 
             ground_truth = np.zeros( (nV_brain+nV_scalp) * 2)
         
@@ -286,9 +318,7 @@ for vv, seed_vertex in enumerate(VERTEX_LIST):
             split = len(X)//2
         
             if sigma_brain > 0:
-              
                 X = sbf.go_from_kernel_space_to_image_space_direct(X, G)
-            
             else:
                 X = X.reshape([2, split]).T
                 
@@ -298,21 +328,14 @@ for vv, seed_vertex in enumerate(VERTEX_LIST):
                                        'parcel': ('vertex',Adot.coords['parcel'].values),
                                        'is_brain':('vertex', Adot.coords['is_brain'].values)},
                             )
-        
-            if sigma_brain > 0:
-                # X_noise_direct = irf.get_image_noise(C_meas, X_direct, W_direct, SB=True, DIRECT=True, G=G)
-                X_noise_direct = irf.get_image_noise_posterior(A_dual_wl, C_meas, 
-                                                                alpha_meas=alpha_meas,
-                                                                alpha_spatial_depth=alpha_spatial,
-                                                                lambda_spatial_depth=lambda_spatial_direct, 
-                                                                DIRECT=True, SB=True, G=G)
-            else:                                    
-                # X_noise_direct = irf.get_image_noise(C_meas_dir, X_direct, W_direct, SB=False, DIRECT=True, G=None)
-                X_noise_direct = irf.get_image_noise_posterior(A_dual_wl, C_meas, 
-                                                                alpha_meas=alpha_meas,
-                                                                alpha_spatial_depth=alpha_spatial,
-                                                                lambda_spatial_depth=lambda_spatial_direct, 
-                                                                DIRECT=True, SB=False, G=None)
+
+            X_noise_direct = irf.get_image_noise_posterior(A_dual_wl, 
+                                                            W_direct, 
+                                                            alpha_spatial=alpha_spatial, 
+                                                            lambda_R=lambda_R,
+                                                            DIRECT=True, 
+                                                            SB=SB, 
+                                                            G=G)
 
             ##### INDIRECT METHOD 
             y_wl0 = y[:n_chs]
@@ -322,7 +345,6 @@ for vv, seed_vertex in enumerate(VERTEX_LIST):
             X_wl1 = W_indirect.isel(wavelength=1).values @ y_wl1
             
             if sigma_brain > 0:
-              
                 X_wl0 = sbf.go_from_kernel_space_to_image_space_indirect(X_wl0, G)
                 X_wl1 = sbf.go_from_kernel_space_to_image_space_indirect(X_wl1, G)
                 
@@ -338,20 +360,13 @@ for vv, seed_vertex in enumerate(VERTEX_LIST):
             # convert to concentraiton 
             X_indirect = xr.dot(einv, X_od/units.mm, dims=["wavelength"])
                 
-            if sigma_brain > 0:
-                # X_noise_indirect = irf.get_image_noise(C_meas_dir, X_indirect, W_indirect, SB=True, DIRECT=False, G=G)
-                X_noise_indirect = irf.get_image_noise_posterior(A_single_wl, C_meas, 
-                                                                alpha_meas=alpha_meas,
-                                                                alpha_spatial_depth=alpha_spatial,
-                                                                lambda_spatial_depth=lambda_spatial_indirect, 
-                                                                DIRECT=False, SB=True, G=G)
-            else:                                    
-                # X_noise_indirect = irf.get_image_noise(C_meas_dir, X_indirect, W_indirect, SB=False, DIRECT=False, G=None)
-                X_noise_indirect = irf.get_image_noise_posterior(A_single_wl, C_meas, 
-                                                            alpha_meas=alpha_meas,
-                                                            alpha_spatial_depth=alpha_spatial,
-                                                            lambda_spatial_depth=lambda_spatial_indirect,
-                                                            DIRECT=False, SB=False, G=None)
+            X_noise_indirect = irf.get_image_noise_posterior(A_single_wl, 
+                                                            W_indirect, 
+                                                            alpha_spatial=alpha_spatial, 
+                                                            lambda_R=lambda_R,
+                                                            DIRECT=False, 
+                                                            SB=SB, 
+                                                            G=G)
             
             if all_subj_X_hrf_mag_direct is None:
                 
@@ -425,7 +440,7 @@ for vv, seed_vertex in enumerate(VERTEX_LIST):
         X_mse_weighted_between_subjects_indirect = X_mse_weighted_between_subjects_indirect.pint.dequantify()
         
         # get the weighted average
-        mse_btw_within_sum_subj = all_subj_X_mse_indirect + X_mse_weighted_between_subjects_indirect
+        mse_btw_within_sum_subj = all_subj_X_mse_indirect.pint.dequantify() + X_mse_weighted_between_subjects_indirect.pint.dequantify()
         denom = (1/mse_btw_within_sum_subj).sum('subj')
         
         X_hrf_mag_mean_weighted_indirect = (all_subj_X_hrf_mag_indirect / mse_btw_within_sum_subj).sum('subj')
@@ -510,8 +525,9 @@ RESULTS = {
            'crosstalk_brainVscalp_HbO_indirect': crosstalk_brainVscalp_HbO_indirect,
            }
   
-with open(os.path.join(SAVE_DIR, f'COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA.magnitude}mm_scale-{SCALE_FACTOR}_sb-{sigma_brain}_ss-{sigma_scalp}_am-{alpha_meas}_as-{alpha_spatial}_{NOISE_MODEL}_dual_wl.pkl'), 'wb') as f:
+with open(os.path.join(SAVE_DIR, f'COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA.magnitude}mm_scale-{SCALE_FACTOR}_sb-{sigma_brain}_ss-{sigma_scalp}_am-{alpha_meas}_as-{alpha_spatial}_lR-{lambda_R}_{NOISE_MODEL}_dual_wl.pkl'), 'wb') as f:
     pickle.dump(RESULTS, f)
  
 print('Job Complete.')
+
 # %%

@@ -76,7 +76,7 @@ from cedalion.io.forward_model import load_Adot
 # import functions from a different directory
 sys.path.append("/projectnb/nphfnirs/s/users/lcarlton/ANALYSIS_CODE/imaging_paper_figure_code/modules/")
 import image_recon_func as irf  # noqa: E402
-
+import spatial_basis_func as sbf
 # Turn off all warnings
 warnings.filterwarnings("ignore")
 
@@ -93,14 +93,23 @@ MAG_TS_FLAG = "TS" # either TS or MAG
 T_WIN = [5, 8]
 optional_flag = ''
 
-lambda_spatial_depth_direct = 1e-6
-lambda_spatial_depth_indirect =lambda_spatial_depth_direct * 1.6e-3
+lambda_R = 1e-6
 
 cfg_list = [
-    {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-3, "lambda_spatial_depth": lambda_spatial_depth_indirect, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-3, "lambda_spatial_depth": lambda_spatial_depth_direct, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-2, "lambda_spatial_depth": lambda_spatial_depth_indirect, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-2, "lambda_spatial_depth": lambda_spatial_depth_direct, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e4, "alpha_spatial_depth": 1e-3, "lambda_R": lambda_R, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e4, "alpha_spatial_depth": 1e-3, "lambda_R": lambda_R, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e4, "alpha_spatial_depth": 1e-2, "lambda_R": lambda_R, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e4, "alpha_spatial_depth": 1e-2, "lambda_R": lambda_R, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+   
+   {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-3, "lambda_R": lambda_R, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-3, "lambda_R": lambda_R, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-2, "lambda_R": lambda_R, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-2, "lambda_R": lambda_R, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+   
+   {"alpha_meas": 1e0, "alpha_spatial_depth": 1e-3, "lambda_R": lambda_R, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e0, "alpha_spatial_depth": 1e-3, "lambda_R": lambda_R, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e0, "alpha_spatial_depth": 1e-2, "lambda_R": lambda_R, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e0, "alpha_spatial_depth": 1e-2, "lambda_R": lambda_R, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
 ]
 
 
@@ -155,6 +164,7 @@ E = nirs.get_extinction_coefficients("prahl", Adot.wavelength)
 for cfg in cfg_list:
     F = None
     D = None
+    max_eig = None
 
     DIRECT = cfg["DIRECT"]
     SB = cfg["SB"]
@@ -163,7 +173,7 @@ for cfg in cfg_list:
     sigma_scalp = cfg["sigma_scalp"]
     alpha_meas = cfg["alpha_meas"]
     alpha_spatial_depth = cfg["alpha_spatial_depth"]
-    lambda_spatial_depth = cfg["lambda_spatial_depth"]
+    lambda_R = cfg["lambda_R"]
 
     if os.path.exists(os.path.join(PROBE_DIR, f"G_matrix_sigmabrain-{float(sigma_brain)}.pkl")) and os.path.exists(
         os.path.join(PROBE_DIR, f"G_matrix_sigmascalp-{float(sigma_scalp)}.pkl")
@@ -199,7 +209,7 @@ for cfg in cfg_list:
         "sigma_scalp": sigma_scalp * units.mm,
     }
 
-    print(f"alpha_meas = {alpha_meas}, alpha_spatial_depth = {alpha_spatial_depth}, lambda_spatial_depth = {lambda_spatial_depth}, SB = {SB}, {direct_name}")
+    print(f"alpha_meas = {alpha_meas}, alpha_spatial_depth = {alpha_spatial_depth}, lambda_R = {lambda_R}, SB = {SB}, {direct_name}")
 
     all_trial_X_hrf = None
     all_trial_X_mse = None
@@ -235,22 +245,23 @@ for cfg in cfg_list:
         C_meas = od_mse_mag.pint.dequantify()
         C_meas = C_meas.stack(measurement=("channel", "wavelength")).sortby("wavelength")
 
-        X_hrf, W, D, F, G = irf.do_image_recon(
+        X_hrf, W, D, F, G, max_eig = irf.do_image_recon(
             od_hrf,
             head=head,
             Adot=Adot,
             C_meas_flag=CMEAS_FLAG,
             C_meas=C_meas,
             wavelength=[760, 850],
-            BRAIN_ONLY=False,
             DIRECT=DIRECT,
             SB=SB,
             cfg_sbf=cfg_sbf,
-            alpha_spatial_depth=alpha_spatial_depth,
+            alpha_spatial=alpha_spatial_depth,
             alpha_meas=alpha_meas,
+            lambda_R=lambda_R,
             F=F,
             D=D,
             G=G,
+            max_eig=max_eig
         )
 
         if SB and not G_EXISTS:
@@ -272,14 +283,22 @@ for cfg in cfg_list:
         # X_mse = irf.get_image_noise(C_meas, template, W, DIRECT=DIRECT, SB=SB, G=G)
         if DIRECT:
             Adot_tmp = irf.get_Adot_scaled(Adot, Adot.wavelength)
+            if SB:
+                Adot_tmp = sbf.get_H_stacked(G, Adot_tmp)
+
         else: 
             Adot_tmp = Adot
-        X_mse = irf.get_image_noise_posterior(Adot_tmp, C_meas, 
-                                            alpha_meas==alpha_meas, 
-                                            lambda_spatial_depth=lambda_spatial_depth, 
-                                            alpha_spatial_depth=alpha_spatial_depth, 
-                                            DIRECT=DIRECT, G=G
-                                            )
+            if SB:
+                Adot_tmp = sbf.get_H(G, Adot_tmp)
+
+        X_mse = irf.get_image_noise_posterior(Adot_tmp, 
+                                                W, 
+                                                alpha_spatial=alpha_spatial_depth, 
+                                                lambda_R=lambda_R,
+                                                DIRECT=DIRECT, 
+                                                SB=SB, 
+                                                G=G)
+
         if 'parcel' in Adot.coords:
             X_mse = X_mse.assign_coords({"parcel" : ("vertex", Adot.coords['parcel'].values)})
                             
@@ -315,12 +334,12 @@ for cfg in cfg_list:
     if SB:
         filepath = os.path.join(
             SAVE_DIR,
-            f"{subject}_task-{TASK}_image_hrf_{fname_flag}_as-{alpha_spatial_depth:.0e}_ls-{lambda_spatial_depth:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}{optional_flag}.pkl.gz",
+            f"{subject}_task-{TASK}_image_hrf_{fname_flag}_as-{alpha_spatial_depth:.0e}_ls-{lambda_R:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}{optional_flag}.pkl.gz",
         )
     else:
         filepath = os.path.join(
             SAVE_DIR,
-            f"{subject}_task-{TASK}_image_hrf_{fname_flag}_as-{alpha_spatial_depth:.0e}_ls-{lambda_spatial_depth:.0e}_am-{alpha_meas:.0e}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}{optional_flag}.pkl.gz",
+            f"{subject}_task-{TASK}_image_hrf_{fname_flag}_as-{alpha_spatial_depth:.0e}_ls-{lambda_R:.0e}_am-{alpha_meas:.0e}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}{optional_flag}.pkl.gz",
         )
 
     file = gzip.GzipFile(filepath, "wb")

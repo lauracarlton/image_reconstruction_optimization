@@ -110,10 +110,11 @@ SCALE_FACTOR = 0.02
 WL_IDX = 1
 VERTEX_LIST = [10089, 10453, 14673, 11323, 13685, 11702, 8337]
 EXCLUDED = ['sub-577']
-lambda_spatial_depth = 1.6e-9
+lambda_R = 0.25e-6
+
 #%% SETUP DOWNSTREAM CONFIGS
 CMEAS_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'augmented_data')
-SAVE_DIR = os.path.join(CMEAS_DIR, 'batch_results')
+SAVE_DIR = os.path.join(CMEAS_DIR, 'batch_results', 'single_wl')
 PROBE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'fw', 'probe')
 
 os.makedirs(SAVE_DIR, exist_ok=True)
@@ -128,10 +129,10 @@ alpha_meas = float(sys.argv[1])
 alpha_spatial = float(sys.argv[2])
 sigma_brain = float(sys.argv[3])
 sigma_scalp = float(sys.argv[4])
-# alpha_meas = 10.0
-# alpha_spatial = 0.001
+# alpha_meas = 1e5
+# alpha_spatial = 0.01
 # sigma_brain = 1.0
-# sigma_scalp = 20.0
+# sigma_scalp = 5.0
 
 print(f"Processing alpha_meas - {alpha_meas}, alpha_spatial - {alpha_spatial}, sigma_brain - {sigma_brain}, sigma_scalp - {sigma_scalp}") 
     
@@ -171,14 +172,20 @@ M = sbf.get_sensitivity_mask(Adot, mask_threshold, 1)
 
 if sigma_brain > 0 and sigma_scalp > 0:
     print(f'\tsigma brain = {sigma_brain}, sigma scalp = {sigma_scalp}')
-
+    SB = True
     G_brain_path = os.path.join(PROBE_DIR, f'G_matrix_sigmabrain-{sigma_brain}.pkl')
     if os.path.exists(G_brain_path):
         with open(G_brain_path, 'rb') as f:
             G_brain = pickle.load(f)
     else:
-        brain_downsampled = sbf.downsample_mesh(head.brain.vertices, M[M.is_brain], sigma_brain*units.mm)
-        G_brain = sbf.get_kernel_matrix(brain_downsampled, head.brain.vertices, sigma_brain*units.mm)
+        brain_downsampled = sbf.downsample_mesh(head.brain.vertices, 
+                                                M[M.is_brain], 
+                                                sigma_brain*units.mm)
+
+        G_brain = sbf.get_kernel_matrix(brain_downsampled, 
+                                        head.brain.vertices, 
+                                        sigma_brain*units.mm)
+
         with open(G_brain_path, 'wb') as f:
                 pickle.dump(G_brain, f)
 
@@ -187,26 +194,32 @@ if sigma_brain > 0 and sigma_scalp > 0:
         with open(G_scalp_path, 'rb') as f:
             G_scalp = pickle.load(f)
     else:
-        scalp_downsampled = sbf.downsample_mesh(head.scalp.vertices, M[~M.is_brain], sigma_scalp*units.mm)
-        G_scalp = sbf.get_kernel_matrix(scalp_downsampled, head.scalp.vertices, sigma_scalp*units.mm)
+        scalp_downsampled = sbf.downsample_mesh(head.scalp.vertices, 
+                                                M[~M.is_brain], 
+                                                sigma_scalp*units.mm)
+
+        G_scalp = sbf.get_kernel_matrix(scalp_downsampled, 
+                                        head.scalp.vertices, 
+                                        sigma_scalp*units.mm)
+
         with open(G_scalp_path, 'wb') as f:
                 pickle.dump(G_scalp, f)
 
     G = {'G_brain': G_brain,
          'G_scalp': G_scalp}
     
-    
     H_single_wl = sbf.get_H(G, Adot)
     A_single_wl = H_single_wl.copy()
     nkernels_brain = G_brain.kernel.shape[0]
 
 else:
+    SB=False
     G = None
     A_single_wl = Adot.copy()
  
-
 F_indirect = None
 D_indirect = None
+max_eig_indirect=None
             
 for vv, seed_vertex in enumerate(VERTEX_LIST):
     
@@ -220,10 +233,18 @@ for vv, seed_vertex in enumerate(VERTEX_LIST):
         
         C_meas = C_meas_list.sel(vertex=seed_vertex, subject=subject)
 
-        W_indirect, D_indirect, F_indirect = irf.calculate_W(A_single_wl, alpha_meas, alpha_spatial, DIRECT=False,
-                                     C_meas_flag=True, C_meas=C_meas, D=D_indirect, F=F_indirect)
+        W_indirect, D_indirect, F_indirect, max_eig_indirect = irf.calculate_W(A_single_wl, 
+                                                                                lambda_R=lambda_R, 
+                                                                                alpha_meas=alpha_meas, 
+                                                                                alpha_spatial=alpha_spatial, 
+                                                                                DIRECT=False, 
+                                                                                C_meas_flag=True, 
+                                                                                C_meas=C_meas, 
+                                                                                D=D_indirect, 
+                                                                                F=F_indirect, 
+                                                                                max_eig=max_eig_indirect)
        
-        W_single_wl = W_indirect.sel(wavelength=850)
+        W_single_wl = W_indirect.isel(wavelength=WL_IDX)
 
         blob_img = synthetic_hrf.build_blob_from_seed_vertex(head, vertex = seed_vertex, scale = BLOB_SIGMA)
         y =  A_fw[:, A_fw.is_brain.values] @ blob_img 
@@ -252,18 +273,15 @@ for vv, seed_vertex in enumerate(VERTEX_LIST):
                          dims=('vertex'),
                          coords={'is_brain':('vertex', A_fw.is_brain.values)})
         
-        cov_img_diag = irf._get_image_noise_post(A_single_wl.sel(wavelength=850).values, C_meas.sel(wavelength=850).values,
-                                                alpha_spatial_depth=alpha_spatial, 
-                                                lambda_spatial_depth=lambda_spatial_depth, 
-                                                alpha_meas=alpha_meas)
-        # cov_img_tmp = W_single_wl * np.sqrt(C_meas.sel(wavelength=850).values) # W is pseudo inverse  --- diagonal (faster than W C W.T)
-        # cov_img_diag = np.nansum(cov_img_tmp**2, axis=1)
+
+        cov_img_diag = irf._get_image_noise_post_indirect(A_single_wl, 
+                                                            W_indirect, 
+                                                            alpha_spatial=alpha_spatial, 
+                                                            lambda_R=lambda_R,
+                                                            SB=SB, 
+                                                            G=G)
         
-        if sigma_brain > 0:
-            cov_img_diag = sbf.go_from_kernel_space_to_image_space_indirect(cov_img_diag, G)
-     
-        X_mse = X.copy()
-        X_mse.values = cov_img_diag
+        X_mse = cov_img_diag.isel(wavelength=WL_IDX)
         
         if all_subj_X_hrf_mag is None:
             
@@ -341,7 +359,7 @@ RESULTS = {'FWHM': FWHM,
            'contrast_ratio': contrast_ratio
     }
 
-with open(os.path.join(SAVE_DIR, f'COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA.magnitude}mm_scale-{SCALE_FACTOR}_sb-{sigma_brain}_ss-{sigma_scalp}_am-{alpha_meas}_as-{alpha_spatial}_{NOISE_MODEL}_single_wl.pkl'), 'wb') as f:
+with open(os.path.join(SAVE_DIR, f'COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA.magnitude}mm_scale-{SCALE_FACTOR}_sb-{sigma_brain}_ss-{sigma_scalp}_am-{alpha_meas}_as-{alpha_spatial}_lR-{lambda_R}_{NOISE_MODEL}_single_wl.pkl'), 'wb') as f:
     pickle.dump(RESULTS, f)
  
 print('Job Complete.')

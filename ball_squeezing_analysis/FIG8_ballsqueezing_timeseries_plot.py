@@ -61,6 +61,7 @@ import sys
 import xarray as xr
 import pyvista as pv
 import numpy as np
+from matplotlib.ticker import MaxNLocator
 
 import matplotlib.pyplot as plt
 import cedalion.dataclasses as cdc
@@ -78,7 +79,7 @@ CMEAS_FLAG = True
 TASK = "BS"
 FNAME_FLAG = "ts"
 SAVE = True
-PLOT_MASK = True
+PLOT_MASK = False
 ROI_SELECTION = "mag"
 REC_STR = "conc_o"
 NOISE_MODEL = "ar_irls"
@@ -90,14 +91,23 @@ PROBE_DIR = os.path.join(ROOT_DIR, "derivatives", "cedalion", "fw", "probe")
 head, PARCEL_DIR = irf.load_head_model("ICBM152", with_parcels=False)
 Adot = load_Adot(os.path.join(PROBE_DIR, "Adot.nc"))
 
-lambda_spatial_depth_direct = 1e-6 
-lambda_spatial_depth_indirect = lambda_spatial_depth_direct * 1.6e-3 
+lambda_R = 1e-6 
 
 cfg_list = [
-    {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-3, "lambda_spatial_depth": lambda_spatial_depth_indirect, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-3, "lambda_spatial_depth": lambda_spatial_depth_direct, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-2, "lambda_spatial_depth": lambda_spatial_depth_indirect, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-2, "lambda_spatial_depth": lambda_spatial_depth_direct, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e4, "alpha_spatial_depth": 1e-3, "lambda_spatial_depth": lambda_R, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e4, "alpha_spatial_depth": 1e-3, "lambda_spatial_depth": lambda_R, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e4, "alpha_spatial_depth": 1e-2, "lambda_spatial_depth": lambda_R, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e4, "alpha_spatial_depth": 1e-2, "lambda_spatial_depth": lambda_R, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+   
+   {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-3, "lambda_spatial_depth": lambda_R, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-3, "lambda_spatial_depth": lambda_R, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-2, "lambda_spatial_depth": lambda_R, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-2, "lambda_spatial_depth": lambda_R, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+   
+   {"alpha_meas": 1e0, "alpha_spatial_depth": 1e-3, "lambda_spatial_depth": lambda_R, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e0, "alpha_spatial_depth": 1e-3, "lambda_spatial_depth": lambda_R, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e0, "alpha_spatial_depth": 1e-2, "lambda_spatial_depth": lambda_R, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e0, "alpha_spatial_depth": 1e-2, "lambda_spatial_depth": lambda_R, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
 ]
 
 # %% GENERATE THE PLOT
@@ -105,7 +115,6 @@ if PLOT_MASK:
     p0_left = pv.Plotter(shape=(2, 4), window_size=[2000, 700], off_screen=SAVE)
     p0_right = pv.Plotter(shape=(2, 4), window_size=[2000, 700], off_screen=SAVE)
 x_ticks = [0, 5, 10, 15]
-# x_tick_labels = ['', 0, 5, 10]
 # y_ticks = [0, 2e-6, 4e-6, 6e-6]
 for cc, cfg in enumerate(cfg_list):
 
@@ -180,9 +189,9 @@ for cc, cfg in enumerate(cfg_list):
         image_results = pickle.load(f)
 
     if SB:
-        title = f"{direct_name},\nsigma_brain-{sigma_brain}, sigma_scalp-{sigma_scalp},\nalpha_meas-{alpha_meas}, alpha_spatial-{alpha_spatial}"
+        title = f"{direct_name},\nsigma_brain-{sigma_brain}, sigma_scalp-{sigma_scalp},\nalpha_meas-{alpha_meas}, alpha_spatial-{alpha_spatial_depth}"
     else:
-        title = f"{direct_name},\nalpha_meas-{alpha_meas}, alpha_spatial-{alpha_spatial}"
+        title = f"{direct_name},\nalpha_meas-{alpha_meas}, alpha_spatial-{alpha_spatial_depth}"
 
     # plot the timeseries based on an ROI selection
     mag = image_results["X_hrf_ts_weighted"]
@@ -370,8 +379,9 @@ for cc, cfg in enumerate(cfg_list):
         ax[1].set_title("Scalp")
         ax[0].set_xticks(x_ticks)
         ax[1].set_xticks(x_ticks)       
-        # ax[0].set_yticks(y_ticks)
-        # ax[1].set_yticks(y_ticks)
+        ax[0].yaxis.set_major_locator(MaxNLocator(nbins=3))
+        ax[1].yaxis.set_major_locator(MaxNLocator(nbins=3))
+
         ax[1].grid("on")
         ax[0].grid("on")
         plt.tight_layout()

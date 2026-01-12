@@ -218,8 +218,10 @@ def get_H(G, A):
 
     nkernels_brain = G['G_brain'].kernel.shape[0]
     nkernels_scalp = G['G_scalp'].kernel.shape[0]
-
     n_kernels = nkernels_brain + nkernels_scalp
+
+    is_brain = np.zeros(n_kernels, dtype=bool)
+    is_brain[:nkernels_brain] = True
 
     H = np.zeros( (n_channel, n_kernels, 2))
 
@@ -234,7 +236,8 @@ def get_H(G, A):
 
     H = xr.DataArray(H, dims=("channel", "kernel", "wavelength"))
     H = H.assign_coords({'channel': A.channel,
-                         'wavelength': A.wavelength})
+                         'wavelength': A.wavelength,
+                         'is_brain': ('kernel', is_brain)})
     
     return H
 

@@ -41,7 +41,7 @@ def load_head_model(head_model='ICBM152', with_parcels=True):
             PARCEL_DIR = None
             
     elif head_model == 'colin27':
-        SEG_DATADIR, mask_files, landmarks_file = datasets.get_colin27_segmentation()()
+        SEG_DATADIR, mask_files, landmarks_file = datasets.get_colin27_segmentation()
         if with_parcels:
             PARCEL_DIR = datasets.get_colin27_parcel_file()
         else :
@@ -61,9 +61,7 @@ def load_head_model(head_model='ICBM152', with_parcels=True):
         parcel_file=PARCEL_DIR
     ) 
     head.scalp.units = units.mm
-    # head.scalp.vertices = head.scalp.vertices * units.mm
     head.brain.units = units.mm
-    # head.brain.vertices = head.brain.vertices * units.mm
     
     return head, PARCEL_DIR
 
@@ -84,14 +82,52 @@ def load_probe(probe_path, snirf_name ='fullhead_56x144_System2.snirf', head_mod
     return Adot, meas_list, geo3d, amp
 
 
-
 #%% MATRIX CALCULATIONS
+def compute_lambda_R_indirect(Adot,
+    lambda_R,
+    alpha_spatial,
+    wavelengths,
+):
+    """
+    Returns:
+        lambda_R_indirect
+    """
 
-def get_Adot_scaled(Adot, wavelengths, BRAIN_ONLY=False):
+    # # -----------------------------
+    # # DIRECT PRIOR (Hb space)
+    # # -----------------------------
+    ec  = nirs.get_extinction_coefficients('prahl', wavelengths)
+
+    A_stacked = get_Adot_scaled(Adot, wavelengths)
+    nV_brain = Adot.is_brain.sum().values
+    nV_head = Adot.shape[1]
+
+    R_direct = _calculate_prior_R(A_stacked, alpha_spatial=alpha_spatial)
+    R_direct = R_direct * lambda_R
+
+    R_direct_max =[ R_direct[:nV_brain].max().values, R_direct[nV_head:nV_head+nV_brain].max().values ]
+
+    # -----------------------------
+    # INDIRECT PRIOR (OD space)
+    # -----------------------------
+    R_indirect_wl1 = _calculate_prior_R(Adot.isel(wavelength=0), alpha_spatial = alpha_spatial)
+    R_indirect_wl2 = _calculate_prior_R(Adot.isel(wavelength=1), alpha_spatial = alpha_spatial)
+    R_indirect_converted = ec.values**2 @ R_direct_max
+
+    lambda_wl1 = R_indirect_converted[0]/R_indirect_wl1[:nV_brain].max()
+    lambda_wl2 = R_indirect_converted[1]/R_indirect_wl2[:nV_brain].max()
+
+    # -----------------------------
+    # RETURN LAMBDAS 
+    # -----------------------------
+    lambda_R_indirect = xr.DataArray([lambda_wl1, lambda_wl2], 
+                                dims = ['wavelength'],
+                                coords = {'wavelength': wavelengths})
+
+    return lambda_R_indirect
     
-    if BRAIN_ONLY:
-        Adot = Adot[:, Adot.is_brain.values, :] 
-
+def get_Adot_scaled(Adot, wavelengths):
+    
     nchannel = Adot.shape[0]
     nvertices = Adot.shape[1]
     E = nirs.get_extinction_coefficients('prahl', Adot.wavelength)
@@ -105,162 +141,210 @@ def get_Adot_scaled(Adot, wavelengths, BRAIN_ONLY=False):
     A[nchannel:, nvertices:] = E.sel(chromo="HbR", wavelength=wl2).values * Adot.sel(wavelength=wl2) # noqa: E501
 
     A = xr.DataArray(A, dims=("measurement", "flat_vertex"))
-    A = A.assign_coords({"parcel" : ("flat_vertex", np.concatenate((Adot.coords['parcel'].values, Adot.coords['parcel'].values))),
-                         "is_brain" : ("flat_vertex", np.concatenate((Adot.coords['is_brain'].values, Adot.coords['is_brain'].values)))})
-    
+
+    if "parcel" in Adot.coords:
+        A = A.assign_coords({"parcel" : ("flat_vertex", np.concatenate((Adot.coords['parcel'].values, Adot.coords['parcel'].values)))})
+    if "is_brain" in Adot.coords:
+        A = A.assign_coords({"is_brain" : ("flat_vertex", np.concatenate((Adot.coords['is_brain'].values, Adot.coords['is_brain'].values)))})
     return A
 
-def calculate_W(A, alpha_meas=1e3, alpha_spatial_depth=1e-3,
-                 BRAIN_ONLY = False, DIRECT=True, 
-                 C_meas_flag=False, C_meas=None, 
-                 D=None, F=None):
+def calculate_W(A, 
+                lambda_R=1e-6, 
+                alpha_meas=1e3, 
+                alpha_spatial=1e-3,
+                DIRECT=True, 
+                C_meas_flag=False, 
+                C_meas=None, 
+                D=None, 
+                F=None, 
+                max_eig=None):
     
     
     if DIRECT:
         if C_meas_flag:
             C_meas = np.diag(C_meas)
 
-        W_xr, D, F = _calculate_W_direct(A, alpha_meas=alpha_meas, 
-                                        alpha_spatial_depth=alpha_spatial_depth, 
-                                        BRAIN_ONLY=BRAIN_ONLY, 
-                                        C_meas_flag=C_meas_flag, C_meas=C_meas,
-                                        D=D, F=F)
+        W_xr, D, F, max_eig = _calculate_W_direct(A, 
+                                                lambda_R=lambda_R, 
+                                                alpha_meas=alpha_meas, 
+                                                alpha_spatial=alpha_spatial, 
+                                                C_meas_flag=C_meas_flag, 
+                                                C_meas=C_meas,
+                                                D=D, 
+                                                F=F, 
+                                                max_eig=max_eig)
     else:
-        W_xr, D, F = _calculate_W_indirect(A, alpha_meas=alpha_meas, 
-                                        alpha_spatial_depth=alpha_spatial_depth, 
-                                        BRAIN_ONLY=BRAIN_ONLY, 
-                                        C_meas_flag=C_meas_flag, C_meas=C_meas, 
-                                        D=D, F=F)
-        
-    return W_xr, D, F
+        W_xr, D, F, max_eig = _calculate_W_indirect(A, 
+                                                    lambda_R=lambda_R, 
+                                                    alpha_meas=alpha_meas, 
+                                                    alpha_spatial=alpha_spatial, 
+                                                    C_meas_flag=C_meas_flag, 
+                                                    C_meas=C_meas, 
+                                                    D=D, 
+                                                    F=F, 
+                                                    max_eig=max_eig)
+                    
+    return W_xr, D, F, max_eig
 
-def _calculate_W_direct(A, alpha_spatial_depth=1e-3, alpha_meas=1e4,
-                        BRAIN_ONLY=False, C_meas_flag=False, 
-                        C_meas=None, D=None, F=None):
+def _calculate_prior_R(A, alpha_spatial):
+
+    B = np.sum((A ** 2), axis=0)
+    b = B.max()
+    
+    lambda_spatial = alpha_spatial * b
+    
+    L = np.sqrt(B + lambda_spatial)
+    Linv = 1/L
+    R = Linv**2         
+
+    return R
+
+def _calculate_W_direct(A, 
+                        alpha_spatial=1e-3, 
+                        alpha_meas=1e4,
+                        lambda_R=1e-6,
+                        C_meas_flag=False, 
+                        C_meas=None, 
+                        D=None, 
+                        F=None, 
+                        max_eig=None):
     
     A_coords = A.coords
     A = A.pint.dequantify().values
-                
-    if BRAIN_ONLY:
-    
-        B = A@A.T
-        b = max(np.diag(B))
-        W = A.T @ np.linalg.pinv(B + (alpha_meas * b.values * np.eye(np.shape(B)[0])))
-    
+                     
+    if D is None and F is None:
+        nV_hbo = A.shape[1]//2
+
+        # # define R using only the HbO vertices 
+        R = _calculate_prior_R(A, alpha_spatial)
+        Linv = np.sqrt(R)
+        R = R * lambda_R
+
+        AR = A * R 
+        F = AR @ A.T # ARA'
+
+        # #% GET F without the scaling of R to define the max eigenvalue
+        A_hat = A * Linv
+        F_unscaled = A_hat @ A_hat.T 
+        max_eig = np.max(np.linalg.eigvals(F_unscaled)) 
+
+        D = R[:, np.newaxis] * A.T
+
     else:
-        if D is None and F is None:
-            B = np.sum((A ** 2), axis=0)
-            b = B.max()
-            
-            # GET A_HAT
-            lambda_spatial = alpha_spatial_depth * b
-            
-            L = np.sqrt(B + lambda_spatial)
-            Linv = 1/L
-            R = Linv**2                           # diagonal entries of prior covariance
-            # R = R * lambda_spatial_depth
-
-            A_hat = A * Linv
-            
-            #% GET W
-            F = A_hat @ A_hat.T
-            # F = F * lambda_spatial_depth
-    
-            D = R[:, np.newaxis] * A.T
-        else:
-            D = D.values
-            F = F.values
-            
-        max_eig = np.max(np.linalg.eigvals(F)) 
-        lambda_meas = alpha_meas * max_eig 
+        D = D.values
+        F = F.values
         
-        if C_meas_flag:  
-            
-            assert  len(C_meas.shape) == 2
-                                                            
-            W = D @ np.linalg.inv(F  + lambda_meas * C_meas )
-        else:
-            W = D @ np.linalg.inv(F  + lambda_meas * np.eye(A.shape[0]) )
-        
-        W_xr = xr.DataArray(W, dims=("flat_vertex", "measurement"))
-        D_xr = xr.DataArray(D, dims=("flat_vertex", "measurement"))
-
-        if 'parcel' in A_coords:
-            W_xr = W_xr.assign_coords({"parcel" : ("flat_vertex", A_coords['parcel'].values)})
-            D_xr = D_xr.assign_coords({"parcel" : ("flat_vertex", A_coords['parcel'].values)})
-        if 'is_brain' in A_coords:
-            W_xr = W_xr.assign_coords({"is_brain": ("flat_vertex", A_coords['is_brain'].values)}) 
-            D_xr = D_xr.assign_coords({"is_brain": ("flat_vertex", A_coords['is_brain'].values)})
-
-        
-        F_xr = xr.DataArray(F, dims=("measurement1", "measurement2"))
-
-    return W_xr, D_xr, F_xr
-
-def _calculate_W_indirect(A, alpha_meas=1e3, alpha_spatial_depth=1e-3,
-                         BRAIN_ONLY=False,  C_meas_flag=False, C_meas=None, 
-                         D=None, F=None):
+    lambda_meas = alpha_meas * max_eig * lambda_R
     
+    if C_meas_flag:  
+        assert  len(C_meas.shape) == 2                 
+        W = D @ np.linalg.inv(F  + lambda_meas * C_meas )
+    else:
+        W = D @ np.linalg.inv(F  + lambda_meas * np.eye(A.shape[0]) )
     
+    W_xr = xr.DataArray(W, dims=("flat_vertex", "measurement"))
+    D_xr = xr.DataArray(D, dims=("flat_vertex", "measurement"))
+
+    if 'parcel' in A_coords:
+        W_xr = W_xr.assign_coords({"parcel" : ("flat_vertex", A_coords['parcel'].values)})
+        D_xr = D_xr.assign_coords({"parcel" : ("flat_vertex", A_coords['parcel'].values)})
+    if 'is_brain' in A_coords:
+        W_xr = W_xr.assign_coords({"is_brain": ("flat_vertex", A_coords['is_brain'].values)}) 
+        D_xr = D_xr.assign_coords({"is_brain": ("flat_vertex", A_coords['is_brain'].values)})
+    
+    F_xr = xr.DataArray(F, dims=("measurement1", "measurement2"))
+
+    return W_xr, D_xr, F_xr, max_eig
+
+def _calculate_W_indirect(A, 
+                        lambda_R=1e-6, 
+                        alpha_meas=1e3, 
+                        alpha_spatial=1e-3, 
+                        C_meas_flag=False, 
+                        C_meas=None, 
+                        D=None, 
+                        F=None, 
+                        max_eig=None):
+    
+    lambda_R_indirect = compute_lambda_R_indirect(A, lambda_R, alpha_spatial, A.wavelength)
+
     W = []
     D_lst = []
     F_lst = []
+    max_eig_lst = []
+
     for wavelength in A.wavelength:
         
         if C_meas_flag:
-            C_meas_wl = C_meas.sel(wavelength=wavelength)
+            C_meas_wl = C_meas.sel(wavelength=wavelength).values
             C_meas_wl = np.diag(C_meas_wl)
         else:
             C_meas_wl = None
             
-        A_wl = A.sel(wavelength=wavelength)
-        if D is None and F is None:
-            W_wl, D_wl, F_wl = _calculate_W_direct(A_wl, 
-                                        alpha_spatial_depth=alpha_spatial_depth,
-                                        alpha_meas=alpha_meas, 
-                                        BRAIN_ONLY=BRAIN_ONLY, 
-                                        C_meas_flag=C_meas_flag, C_meas=C_meas_wl, 
-                                        D=D, F=F)
+        lambda_R_wl = lambda_R_indirect.sel(wavelength=wavelength).values
+
+        if F is None and D is None:
+
+            A_wl = A.sel(wavelength=wavelength).values
+
+            R = _calculate_prior_R(A_wl, alpha_spatial)
+            Linv = np.sqrt(R)
+
+            R = R * lambda_R_wl
+
+            A_tmp = A_wl * R
+            F_wl = A_tmp @ A_wl.T
+
+            A_hat = A_wl * Linv
+            F_unscaled = A_hat @ A_hat.T
+
+            D_wl = R[:, np.newaxis] * A_wl.T
+
+            max_eig_wl = np.max(np.linalg.eigvals(F_unscaled)) 
+
         else:
-            W_wl, D_wl, F_wl = _calculate_W_direct(A_wl, 
-                                        alpha_spatial_depth=alpha_spatial_depth,
-                                        alpha_meas=alpha_meas, 
-                                        BRAIN_ONLY=BRAIN_ONLY, 
-                                        C_meas_flag=C_meas_flag, C_meas=C_meas_wl, 
-                                        D=D.sel(wavelength=wavelength), F=F.sel(wavelength=wavelength))
-        
+            F_wl = F.sel(wavelength=wavelength).values
+            D_wl = D.sel(wavelength=wavelength).values
+            max_eig_wl = max_eig.sel(wavelength=wavelength).values
+
+        lambda_meas = alpha_meas * lambda_R_wl * max_eig_wl
+
+        W_wl = D_wl @ np.linalg.inv(F_wl  + lambda_meas * C_meas_wl )
         
         W.append(W_wl)
         D_lst.append(D_wl)
         F_lst.append(F_wl)
-    
-    W_xr = xr.concat(W, dim='wavelength')
-    W_xr = W_xr.assign_coords(wavelength=A.wavelength)
-    
-    D = xr.concat(D_lst, dim='wavelength')
-    D = D.assign_coords(wavelength=A.wavelength)
+        max_eig_lst.append(max_eig_wl)
 
-    F = xr.concat(F_lst, dim='wavelength')
-    F = F.assign_coords(wavelength=A.wavelength)
+    W_xr = xr.DataArray(W, dims=( "wavelength", "vertex", "channel",),
+                        coords = {'wavelength': A.wavelength})
+    
+    D_xr = xr.DataArray(D_lst, dims=( "wavelength", "vertex", "channel",),
+                        coords = {'wavelength': A.wavelength})
 
-    return W_xr, D, F
+    F_xr = xr.DataArray(F_lst, dims=( "wavelength", "channel1", "channel2"),
+                        coords = {'wavelength': A.wavelength})
+
+    max_eig = xr.DataArray(max_eig_lst, dims=("wavelength"),
+                        coords = {'wavelength': A.wavelength})
+
+    return W_xr, D_xr, F_xr, max_eig
 
 #%% do image recon
-def _get_image_brain_scalp_direct(y, W, A, SB=False, G=None):
+def _get_image_brain_scalp_direct(y, W, SB=False, G=None):
     
     y = y.stack(measurement=['channel', 'wavelength']).sortby('wavelength')
-    try:
-        X = W.values @ y.values
-    except:
-        X = W @ y
-        X = X.values
-        
+
+    if len(y.shape) > 1:
+        y = y.transpose('measurement', 'time')
+
+    X = W.values @ y.values
+
     split = len(X)//2
     
     if SB:
         X = sbf.go_from_kernel_space_to_image_space_direct(X, G)
 
-    
     else:
         if len(X.shape) == 1:
             X = X.reshape([2, split]).T
@@ -285,308 +369,254 @@ def _get_image_brain_scalp_direct(y, W, A, SB=False, G=None):
                          coords = {'chromo': ['HbO', 'HbR'],
                                    t_name: t},
                          )
-    if 'parcel' in A.coords:
-        X = X.assign_coords({"parcel" : ("vertex", A.coords['parcel'].values)})
-                              
-    if 'is_brain' in A.coords:
-        X = X.assign_coords({"is_brain": ("vertex", A.coords['is_brain'].values)}) 
 
     return X
 
 
-def _get_image_brain_scalp_indirect(y, W, A, SB=False, G=None):
+def _get_image_brain_scalp_indirect(y, W, SB=False, G=None):
                   
-     W_indirect_wl0 = W.isel(wavelength=0)
-     W_indirect_wl1 = W.isel(wavelength=1)
-     
-     y_wl0 = y.isel(wavelength=0) #[:split]
-     y_wl1 = y.isel(wavelength=1) #[split:]
+    W_indirect_wl0 = W.isel(wavelength=0)
+    W_indirect_wl1 = W.isel(wavelength=1)
+    
+    if len(y.shape) > 1:
+        y = y.transpose('channel', 'time', 'wavelength')
 
-     try:
-        X_wl0 = W_indirect_wl0.values @ y_wl0.values
-        X_wl1 = W_indirect_wl1.values @ y_wl1.values
-     except:
-        X_wl0 = W_indirect_wl0 @ y_wl0
-        X_wl1 = W_indirect_wl1 @ y_wl1   
-        
+    y_wl0 = y.isel(wavelength=0) 
+    y_wl1 = y.isel(wavelength=1)
+
+    X_wl0 = W_indirect_wl0.values @ y_wl0.values
+    X_wl1 = W_indirect_wl1.values @ y_wl1.values
              
-     if SB:
-         X_wl0 = sbf.go_from_kernel_space_to_image_space_indirect(X_wl0, G)
-         X_wl1 = sbf.go_from_kernel_space_to_image_space_indirect(X_wl1, G)
-         
-      
-     X_od = np.stack([X_wl0, X_wl1], axis=1)  
+    if SB:
+        X_wl0 = sbf.go_from_kernel_space_to_image_space_indirect(X_wl0, G)
+        X_wl1 = sbf.go_from_kernel_space_to_image_space_indirect(X_wl1, G)
     
-     if len(X_od.shape) == 2:
-         X_od = xr.DataArray(X_od, 
-                          dims = ('vertex', 'wavelength'),
-                          coords = {'wavelength': W.wavelength}
-                          )
-     else:
-         if 'time' in y.dims:
-             t = y.time
-             t_name = 'time'
-         elif 'reltime' in y.dims:
-             t = y.reltime
-             t_name = 'reltime'
-         X_od = xr.DataArray(X_od, 
-                          dims = ('vertex', 'wavelength', t_name),
-                          coords = {'wavelength': W.wavelength,
-                                    t_name: t},
-                          )
+    X_od = np.stack([X_wl0, X_wl1], axis=1)  
 
-     if 'parcel' in A.coords:
-        X_od = X_od.assign_coords({"parcel" : ("vertex", A.coords['parcel'].values)})
-                              
-     if 'is_brain' in A.coords:
-        X_od = X_od.assign_coords({"is_brain": ("vertex", A.coords['is_brain'].values)}) 
+    if len(X_od.shape) == 2:
+        X_od = xr.DataArray(X_od, 
+                        dims = ('vertex', 'wavelength'),
+                        coords = {'wavelength': W.wavelength}
+                        )
+    else:
+        if 'time' in y.dims:
+            t = y.time
+            t_name = 'time'
+        elif 'reltime' in y.dims:
+            t = y.reltime
+            t_name = 'reltime'
+        X_od = xr.DataArray(X_od, 
+                        dims = ('vertex', 'wavelength', t_name),
+                        coords = {'wavelength': W.wavelength,
+                                t_name: t},
+                        )
 
+    # convert to concentration 
+    E = nirs.get_extinction_coefficients('prahl', W.wavelength)
+    einv = xrutils.pinv(E)
 
-     # convert to concentration 
-     E = nirs.get_extinction_coefficients('prahl', W.wavelength)
-     einv = xrutils.pinv(E)
-
-     X = xr.dot(einv, X_od/units.mm, dims=["wavelength"])
-     
-     return X
-
-def do_image_recon(od, head, Adot, C_meas_flag, C_meas, wavelength, BRAIN_ONLY, DIRECT,
-                   SB, cfg_sbf, alpha_spatial_depth, alpha_meas, D, F, G ):
+    X = xr.dot(einv, X_od/units.mm, dims=["wavelength"])
     
+    return X
+
+def do_image_recon(od, 
+                   head, 
+                   Adot, 
+                   C_meas_flag, 
+                   C_meas, 
+                   wavelength, 
+                   DIRECT,
+                   SB, 
+                   cfg_sbf, 
+                   lambda_R, 
+                   alpha_spatial, 
+                   alpha_meas, 
+                   D, 
+                   F, 
+                   G, 
+                   max_eig ):
+    
+    Adot_tmp = Adot.copy()
     if DIRECT:
         Adot_stacked = get_Adot_scaled(Adot, wavelength)
         
         if SB:
             if G is None:
                 M = sbf.get_sensitivity_mask(Adot, cfg_sbf['mask_threshold'], 1)
-                G = sbf.get_G_matrix(head, M, threshold_brain=cfg_sbf['threshold_brain'],
-                                             threshold_scalp = cfg_sbf['threshold_scalp'],
-                                             sigma_brain=cfg_sbf['sigma_brain'],
-                                             sigma_scalp=cfg_sbf['sigma_scalp'])
+                G = sbf.get_G_matrix(head, 
+                                    M, 
+                                    threshold_brain=cfg_sbf['threshold_brain'],
+                                    threshold_scalp = cfg_sbf['threshold_scalp'],
+                                    sigma_brain=cfg_sbf['sigma_brain'],
+                                    sigma_scalp=cfg_sbf['sigma_scalp'])
                 
             H_stacked = sbf.get_H_stacked(G, Adot_stacked)
             Adot_stacked = H_stacked.copy()
             
-        W, D, F = calculate_W(Adot_stacked, alpha_meas=alpha_meas, 
-                              alpha_spatial_depth=alpha_spatial_depth, 
-                              C_meas_flag=C_meas_flag, C_meas=C_meas, 
-                              DIRECT=DIRECT, BRAIN_ONLY=BRAIN_ONLY, D=D, F=F)
+        W, D, F, max_eig = calculate_W(Adot_stacked, 
+                                        lambda_R=lambda_R, 
+                                        alpha_meas=alpha_meas, 
+                                        alpha_spatial=alpha_spatial, 
+                                        C_meas_flag=C_meas_flag, 
+                                        C_meas=C_meas, 
+                                        DIRECT=DIRECT, 
+                                        D=D, 
+                                        F=F, 
+                                        max_eig=max_eig)
        
-        X = _get_image_brain_scalp_direct(od, W, Adot, SB=SB, G=G)
+        X = _get_image_brain_scalp_direct(od, W, SB=SB, G=G)
     
             
     else:
         if SB:
             if G is None:
                 M = sbf.get_sensitivity_mask(Adot, cfg_sbf['mask_threshold'], 1)
-                G = sbf.get_G_matrix(head, M, threshold_brain=cfg_sbf['threshold_brain'],
-                                             threshold_scalp = cfg_sbf['threshold_scalp'],
-                                             sigma_brain=cfg_sbf['sigma_brain'],
-                                             sigma_scalp=cfg_sbf['sigma_scalp'])
+                G = sbf.get_G_matrix(head, 
+                                    M, 
+                                    threshold_brain=cfg_sbf['threshold_brain'],
+                                    threshold_scalp = cfg_sbf['threshold_scalp'],
+                                    sigma_brain=cfg_sbf['sigma_brain'],
+                                    sigma_scalp=cfg_sbf['sigma_scalp'])
             
-            H = sbf.get_H(G, Adot)
+            H = sbf.get_H(G, Adot)            
             Adot = H.copy()
+
             
-        W, D, F = calculate_W(Adot, 
-                                alpha_meas=alpha_meas, alpha_spatial_depth=alpha_spatial_depth, 
-                                C_meas_flag=C_meas_flag, C_meas=C_meas, 
-                                DIRECT=DIRECT, BRAIN_ONLY=BRAIN_ONLY, D=D, F=F)
+        W, D, F, max_eig = calculate_W(Adot, 
+                                        lambda_R=lambda_R,
+                                        alpha_meas=alpha_meas, 
+                                        alpha_spatial=alpha_spatial, 
+                                        C_meas_flag=C_meas_flag, 
+                                        C_meas=C_meas, 
+                                        DIRECT=DIRECT, 
+                                        D=D, 
+                                        F=F, 
+                                        max_eig=max_eig)
 
-        X = _get_image_brain_scalp_indirect(od, W, Adot, SB=SB, G=G)
+        X = _get_image_brain_scalp_indirect(od, W, SB=SB, G=G)
 
-    if 'parcel' in Adot.coords and 'parcel' not in X.coords:
-        X = X.assign_coords({"parcel" : ("vertex", Adot.coords['parcel'].values)})
+    if 'parcel' in Adot_tmp.coords:
+        X = X.assign_coords({"parcel" : ("vertex", Adot_tmp.coords['parcel'].values)})
                             
-    if 'is_brain' in Adot.coords and 'is_brain' not in X.coords:
-        X = X.assign_coords({"is_brain": ("vertex", Adot.coords['is_brain'].values)}) 
+    if 'is_brain' in Adot_tmp.coords:
+        X = X.assign_coords({"is_brain": ("vertex", Adot_tmp.coords['is_brain'].values)}) 
             
-    return X, W, D, F, G
+    return X, W, D, F, G, max_eig
     
 
-def get_image_noise(C_meas, X, W, SB=False, DIRECT=True, G=None):
-
-    TIME = False
-    if 'time' in C_meas.dims:
-        t_dim = 'time'
-        TIME = True
-    elif 'reltime' in C_meas.dims:
-        t_dim = 'reltime'
-        TIME = True
-
-    if DIRECT:
-        if TIME:
-            C_tmp_lst = []
-            for t in C_meas[t_dim]:
-                    C_tmp = C_meas.sel({t_dim:t})
-                    cov_img_tmp = W * np.sqrt(C_tmp.values) # get diag of image covariance
-                    cov_img_diag = np.nansum(cov_img_tmp**2, axis=1)
-                    C_tmp_lst.append(cov_img_diag)
-
-            cov_img_diag = np.vstack(C_tmp_lst)
-        else:
-            cov_img_tmp = W *np.sqrt(C_meas.values) # W is pseudo inverse  --- diagonal (faster than W C W.T)
-            cov_img_diag = np.nansum(cov_img_tmp**2, axis=1)
-        
-        if SB:
-            cov_img_diag = sbf.go_from_kernel_space_to_image_space_direct(cov_img_diag, G)
-        else:
-            if TIME:
-                split = cov_img_diag.shape[1]//2
-                HbO = cov_img_diag[:, :split]   # shape: (time, vertices)
-                HbR = cov_img_diag[:, split:]   # shape: (time, vertices)
-
-                # Stack into vertex x 2 x time
-                cov_img_diag = np.stack([HbO.T, HbR.T], axis=1)  # (vertex, 2, time)
-                cov_img_diag = cov_img_diag.transpose(0,2,1)
-            else:
-                split = len(cov_img_diag)//2
-                cov_img_diag =  np.reshape( cov_img_diag, (2,split) ).T 
-        
-
-    else:
-        cov_img_lst = []
-        E = nirs.get_extinction_coefficients('prahl', W.wavelength)
-        einv = xrutils.pinv(E)
-
-        for wavelength in W.wavelength:
-            W_wl = W.sel(wavelength=wavelength)
-            C_wl = C_meas.sel(wavelength=wavelength)
-
-            if TIME:
-                C_tmp_lst = []
-                for t in C_wl[t_dim]:
-                    C_tmp = C_wl.sel({t_dim:t})
-                    cov_img_tmp = W_wl * np.sqrt(C_tmp.values) # get diag of image covariance
-                    cov_img_diag = np.nansum(cov_img_tmp**2, axis=1)
-                    C_tmp_lst.append(cov_img_diag)
-
-                cov_img_diag = np.vstack(C_tmp_lst)
-
-            else:
-                cov_img_tmp = W_wl * np.sqrt(C_wl.values) # get diag of image covariance
-                cov_img_diag = np.nansum(cov_img_tmp**2, axis=1)
-            
-            if SB:
-                cov_img_diag = sbf.go_from_kernel_space_to_image_space_indirect(cov_img_diag, G)
-            
-            cov_img_lst.append(cov_img_diag)
-            
-        if TIME:
-            cov_img_diag =  np.stack(cov_img_lst, axis=2) 
-            cov_img_diag = np.transpose(cov_img_diag, [2,1,0])
-            cov_img_diag = np.einsum('ij,jab->iab', einv.values**2, cov_img_diag)
-
-        else:
-            cov_img_diag =  np.vstack(cov_img_lst) 
-            cov_img_diag = einv.values**2 @ cov_img_diag
-
-    noise = X.copy()
-    noise.values = cov_img_diag
-
-    return noise
-
-def _get_image_noise_post(A, C_meas, alpha_spatial_depth, lambda_spatial_depth, alpha_meas):
+def _get_image_noise_post_direct(A, 
+                                W, 
+                                lambda_R=1e-6, 
+                                alpha_spatial=1e-3, 
+                                SB=False, 
+                                G=None):
     """
     Compute W and mse_post for a given wavelength using
     spatial regularization (via column scaling) and
     measurement regularization in data space.
     """
-    if len(C_meas.shape) == 1:
-        C_meas = np.diag(C_meas)
-    
-    # ---------------------------------------------------------
-    # 2) Spatial regularization: R = diag(1 / (B + λ_spatial))
-    # ---------------------------------------------------------
-    B = np.sum(A**2, axis=0)              # column energy (size n_params)
-    b = B.max()
-    lambda_spatial = alpha_spatial_depth * b
-
-    L = np.sqrt(B + lambda_spatial)       # sqrt of denom
-    Linv = 1.0 / L
-
-    R = Linv**2                           # diagonal entries of prior covariance
-
-    A_hat = A * Linv                      # broadcasting across rows
 
     # ---------------------------------------------------------
-    # 3) F = A_hat A_hat^T (data-space covariance)
+    # Spatial regularization: R = diag(1 / (B + λ_spatial))
     # ---------------------------------------------------------
-    F = A_hat @ A_hat.T                   # (n_channels × n_channels)
-    
-    # ---------------------------------------------------------
-    # 4) Measurement regularization parameter λ_meas
-    # ---------------------------------------------------------
-    max_eig = np.max(np.linalg.eigvals(F))
-    lambda_meas = alpha_meas * max_eig
-    
-    # ---------------------------------------------------------
-    # 5) Build D = R A^T   (R is diagonal)
-    # ---------------------------------------------------------
-    D = (R[:, None] * A.T)                # shape: (n_params × n_channels)
+    R = _calculate_prior_R(A, alpha_spatial)
+    R = R * lambda_R
 
     # ---------------------------------------------------------
-    # 6) Compute W
-    #     W = R A^T  (F + λ_meas C_meas)^(-1)
-    # ---------------------------------------------------------
-    M = F + lambda_meas * C_meas          # data-space system
-    W = D @ np.linalg.inv(M)              # (n_params × n_channels)
-
-    # ---------------------------------------------------------
-    # 7) Posterior variance (diagonal only)
-    #
+    #  Posterior variance (diagonal only)
     # mse_post(j) = R_j * (1 - (W A^T)_{jj})
     # ---------------------------------------------------------
     s = np.sum(W * A.T, axis=1)   # elementwise multiply row i with column i
-    mse_post = lambda_spatial_depth * R * (1.0 - s)
+    mse_post = R * (1.0 - s)
 
-    return mse_post
+    if SB:
+        mse_post = sbf.go_from_kernel_space_to_image_space_direct(mse_post, G).T
+    else:
+        split = len(mse_post)//2
+        mse_post =  np.reshape( mse_post, (2,split) )
+
+    X_mse_post_xr = xr.DataArray(mse_post, 
+                            dims = ['chromo', 'vertex'],
+                            coords = {'chromo': ['HbO', 'HbR'] })
+    return X_mse_post_xr
+
+def _get_image_noise_post_indirect(A, 
+                                W, 
+                                lambda_R=1e-6, 
+                                alpha_spatial=1e-3, 
+                                SB=False, 
+                                G=None):
+    """
+    Compute W and mse_post for a given wavelength using
+    spatial regularization (via column scaling) and
+    measurement regularization in data space.
+    """
+    
+    lambda_R_indirect = compute_lambda_R_indirect(A, lambda_R, alpha_spatial, A.wavelength)
+    mse_lst = []
+    # ---------------------------------------------------------
+    # 2) Spatial regularization: R = diag(1 / (B + λ_spatial))
+    # ---------------------------------------------------------
+    for wl in A.wavelength:
+
+        lambda_R_wl = lambda_R_indirect.sel(wavelength=wl).values
+
+        A_wl = A.sel(wavelength=wl).values
+        W_wl = W.sel(wavelength=wl).values
+
+        R = _calculate_prior_R(A_wl, alpha_spatial)
+        R = R * lambda_R_wl
+
+        # ---------------------------------------------------------
+        # Posterior variance (diagonal only)
+        # mse_post(j) = R_j * (1 - (W A^T)_{jj})
+        # ---------------------------------------------------------
+        s = np.sum(W_wl * A_wl.T, axis=1)   # elementwise multiply row i with column i
+        mse_post = R * (1.0 - s)
+
+        if SB:
+            mse_post = sbf.go_from_kernel_space_to_image_space_indirect(mse_post, G).T
+
+        mse_lst.append(mse_post)
+
+    X_mse_post_xr = xr.DataArray(mse_lst, 
+                            dims = ['wavelength', 'vertex'],
+                            coords = {'wavelength': A.wavelength })
+
+    return X_mse_post_xr
 
 
-
-def get_image_noise_posterior(Adot, C_meas, alpha_meas=1e4, alpha_spatial_depth=1e-3, 
-                                        lambda_spatial_depth=1e-2,
-                                        DIRECT=True, SB=False, G=None):
+def get_image_noise_posterior(Adot, 
+                            W, 
+                            alpha_spatial=1e-3, 
+                            lambda_R=1e-6,
+                            DIRECT=True, 
+                            SB=False, 
+                            G=None):
 
     if DIRECT:
 
-        # A = get_Adot_scaled(Adot, Adot.wavelength)
-        C_meas = C_meas.values
-        mse_post = _get_image_noise_post(Adot.values, C_meas,
-                                        alpha_meas=alpha_meas,
-                                        lambda_spatial_depth=lambda_spatial_depth,
-                                        alpha_spatial_depth=alpha_spatial_depth)
+        mse_post = _get_image_noise_post_direct(Adot.values, 
+                                                W.values,
+                                                lambda_R=lambda_R,
+                                                alpha_spatial=alpha_spatial, 
+                                                SB=SB, 
+                                                G=G)
 
-        if SB:
-            mse_post = sbf.go_from_kernel_space_to_image_space_direct(mse_post, G).T
-        else:
-            split = len(mse_post)//2
-            mse_post =  np.reshape( mse_post, (2,split) )
 
     else: 
-        mse_post_lst = []
+        
         E = nirs.get_extinction_coefficients('prahl', Adot.wavelength)
         einv = xrutils.pinv(E)
 
-        for wl in Adot.wavelength: 
-            A_wl = Adot.sel(wavelength=wl).values
-            C_wl = C_meas.sel(wavelength=wl).values
-            mse_post = _get_image_noise_post(A_wl, C_wl,
-                                            alpha_meas=alpha_meas,
-                                            alpha_spatial_depth=alpha_spatial_depth,
-                                            lambda_spatial_depth=lambda_spatial_depth)
-                    
-            if SB:
-                mse_post = sbf.go_from_kernel_space_to_image_space_indirect(mse_post, G).T
+        mse_post_od = _get_image_noise_post_indirect(Adot, 
+                                                    W,
+                                                    lambda_R=lambda_R,
+                                                    alpha_spatial=alpha_spatial,
+                                                    SB=SB, 
+                                                    G=G)
 
-            mse_post_lst.append(mse_post)
-
-        mse_post_od =  np.vstack(mse_post_lst)
-        mse_post = einv.values**2 @ mse_post_od
-
-
-    X_mse_post_xr = xr.DataArray(mse_post, 
-                                dims = ['chromo', 'vertex'],
-                                coords = {'chromo': ['HbO', 'HbR'] })
+        mse_post = einv**2 @ mse_post_od
 
 
     # if 'parcel' in Adot.coords:
@@ -595,7 +625,7 @@ def get_image_noise_posterior(Adot, C_meas, alpha_meas=1e4, alpha_spatial_depth=
     # if 'is_brain' in Adot.coords:
     #     X_mse_post_xr = X_mse_post_xr.assign_coords({"is_brain": ("vertex", Adot.coords['is_brain'].values)}) 
 
-    return X_mse_post_xr
+    return mse_post
 
 #%%  probe geometry
 
@@ -685,3 +715,88 @@ def get_probe_aligned(head, geo3d):
     probe_snapped_aligned = head.brain.snap(probe_aligned)
 
     return probe_snapped_aligned
+
+
+#%% OLD
+
+    # def get_image_noise(C_meas, X, W, SB=False, DIRECT=True, G=None):
+
+    # TIME = False
+    # if 'time' in C_meas.dims:
+    #     t_dim = 'time'
+    #     TIME = True
+    # elif 'reltime' in C_meas.dims:
+    #     t_dim = 'reltime'
+    #     TIME = True
+
+    # if DIRECT:
+    #     if TIME:
+    #         C_tmp_lst = []
+    #         for t in C_meas[t_dim]:
+    #                 C_tmp = C_meas.sel({t_dim:t})
+    #                 cov_img_tmp = W * np.sqrt(C_tmp.values) # get diag of image covariance
+    #                 cov_img_diag = np.nansum(cov_img_tmp**2, axis=1)
+    #                 C_tmp_lst.append(cov_img_diag)
+
+    #         cov_img_diag = np.vstack(C_tmp_lst)
+    #     else:
+    #         cov_img_tmp = W *np.sqrt(C_meas.values) # W is pseudo inverse  --- diagonal (faster than W C W.T)
+    #         cov_img_diag = np.nansum(cov_img_tmp**2, axis=1)
+        
+    #     if SB:
+    #         cov_img_diag = sbf.go_from_kernel_space_to_image_space_direct(cov_img_diag, G)
+    #     else:
+    #         if TIME:
+    #             split = cov_img_diag.shape[1]//2
+    #             HbO = cov_img_diag[:, :split]   # shape: (time, vertices)
+    #             HbR = cov_img_diag[:, split:]   # shape: (time, vertices)
+
+    #             # Stack into vertex x 2 x time
+    #             cov_img_diag = np.stack([HbO.T, HbR.T], axis=1)  # (vertex, 2, time)
+    #             cov_img_diag = cov_img_diag.transpose(0,2,1)
+    #         else:
+    #             split = len(cov_img_diag)//2
+    #             cov_img_diag =  np.reshape( cov_img_diag, (2,split) ).T 
+        
+
+    # else:
+    #     cov_img_lst = []
+    #     E = nirs.get_extinction_coefficients('prahl', W.wavelength)
+    #     einv = xrutils.pinv(E)
+
+    #     for wavelength in W.wavelength:
+    #         W_wl = W.sel(wavelength=wavelength)
+    #         C_wl = C_meas.sel(wavelength=wavelength)
+
+    #         if TIME:
+    #             C_tmp_lst = []
+    #             for t in C_wl[t_dim]:
+    #                 C_tmp = C_wl.sel({t_dim:t})
+    #                 cov_img_tmp = W_wl * np.sqrt(C_tmp.values) # get diag of image covariance
+    #                 cov_img_diag = np.nansum(cov_img_tmp**2, axis=1)
+    #                 C_tmp_lst.append(cov_img_diag)
+
+    #             cov_img_diag = np.vstack(C_tmp_lst)
+
+    #         else:
+    #             cov_img_tmp = W_wl * np.sqrt(C_wl.values) # get diag of image covariance
+    #             cov_img_diag = np.nansum(cov_img_tmp**2, axis=1)
+            
+    #         if SB:
+    #             cov_img_diag = sbf.go_from_kernel_space_to_image_space_indirect(cov_img_diag, G)
+            
+    #         cov_img_lst.append(cov_img_diag)
+            
+    #     if TIME:
+    #         cov_img_diag =  np.stack(cov_img_lst, axis=2) 
+    #         cov_img_diag = np.transpose(cov_img_diag, [2,1,0])
+    #         cov_img_diag = np.einsum('ij,jab->iab', einv.values**2, cov_img_diag)
+
+    #     else:
+    #         cov_img_diag =  np.vstack(cov_img_lst) 
+    #         cov_img_diag = einv.values**2 @ cov_img_diag
+
+    # noise = X.copy()
+    # noise.values = cov_img_diag
+
+    # return noise

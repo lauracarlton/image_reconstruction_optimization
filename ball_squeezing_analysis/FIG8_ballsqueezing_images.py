@@ -86,17 +86,26 @@ optional_flag = ''
 
 SCALE = 1
 FLAG_HBO_LIST = [True, False] 
-FLAG_BRAIN_LIST = [True]  # , False]
+FLAG_BRAIN_LIST = [True , False]
 FLAG_IMG_LIST = ["tstat", "mag", "stderr", "var_btw", "var_within"]  # , 'noise'] #['mag', 'tstat', 'noise'] #, 'noise'
 FLAG_CONDITION_LIST = ["right", "left"] 
-lambda_spatial_depth_direct = 1e-6 
-lambda_spatial_depth_indirect = lambda_spatial_depth_direct * 1.6e-3 
+lambda_R = 1e-6 
 
 cfg_list = [
-    {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-3, "lambda_spatial_depth": lambda_spatial_depth_indirect, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-3, "lambda_spatial_depth": lambda_spatial_depth_direct, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-2, "lambda_spatial_depth": lambda_spatial_depth_indirect, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-2, "lambda_spatial_depth": lambda_spatial_depth_direct, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+  {"alpha_meas": 1e4, "alpha_spatial_depth": 1e-3, "lambda_spatial_depth": lambda_R, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e4, "alpha_spatial_depth": 1e-3, "lambda_spatial_depth": lambda_R, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e4, "alpha_spatial_depth": 1e-2, "lambda_spatial_depth": lambda_R, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e4, "alpha_spatial_depth": 1e-2, "lambda_spatial_depth": lambda_R, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+   
+   {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-3, "lambda_spatial_depth": lambda_R, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-3, "lambda_spatial_depth": lambda_R, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-2, "lambda_spatial_depth": lambda_R, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-2, "lambda_spatial_depth": lambda_R, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+   
+   {"alpha_meas": 1e0, "alpha_spatial_depth": 1e-3, "lambda_spatial_depth": lambda_R, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e0, "alpha_spatial_depth": 1e-3, "lambda_spatial_depth": lambda_R, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e0, "alpha_spatial_depth": 1e-2, "lambda_spatial_depth": lambda_R, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e0, "alpha_spatial_depth": 1e-2, "lambda_spatial_depth": lambda_R, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
 ]
 
 if SPATIAL_SMOOTHING:
@@ -134,8 +143,6 @@ for cfg in cfg_list:
     SB = cfg["SB"]
     sigma_brain = cfg["sigma_brain"]
     sigma_scalp = cfg["sigma_scalp"]
-    # alpha_meas = cfg["alpha_meas"]
-    # alpha_spatial = cfg["alpha_spatial"]
     alpha_meas = cfg["alpha_meas"]
     alpha_spatial_depth = cfg["alpha_spatial_depth"]
     lambda_spatial_depth = cfg["lambda_spatial_depth"]

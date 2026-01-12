@@ -58,8 +58,8 @@ import subprocess
 
 CODE_DIR = '/projectnb/nphfnirs/s/users/lcarlton/ANALYSIS_CODE/imaging_paper_figure_code/augmented_simulation/batch_codes/single_wl_aug'
 
-alpha_meas_list = [10 ** i for i in range(-6, 6)]
-alpha_spatial_list = [1e-3, 1e-2]
+alpha_meas_list = [10 ** i for i in range(-4, 9)]
+alpha_spatial_list = [1e-4, 1e-1, 1e-3, 1e-2]
 sigma_brain_list = [0, 1, 3, 5]
 sigma_scalp_list = [0, 1, 5, 10, 20]
 

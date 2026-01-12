@@ -83,7 +83,7 @@ BLOB_SIGMA = 15
 TASK = 'RS'
 SCALE_FACTOR = 0.02
 NOISE_MODEL = 'ar_irls'  # add if consistent with other figures
-
+lambda_R = 1e-6
 alpha_spatial_sb = 1e-2
 alpha_spatial_nosb = 1e-3
 
@@ -93,12 +93,13 @@ SAVE_PLOT = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'figures')
 
 os.makedirs(SAVE_PLOT, exist_ok=True)
 
-with open(os.path.join(SAVE_DIR, f'COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_{NOISE_MODEL}_single_wl.pkl'), 'rb') as f:
+with open(os.path.join(SAVE_DIR, f'COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_lR-{float(lambda_R)}_{NOISE_MODEL}_single_wl.pkl'), 'rb') as f:
     RESULTS = pickle.load(f)
 
 sigma_brain_list = RESULTS['FWHM'].coords['sigma_brain'].values
 # sigma_scalp_list = RESULTS['FWHM'].coords['sigma_scalp'].values
 sigma_scalp_list = [0, 1, 5, 10]
+sigma_brain_list = [0, 1, 3] #, 10]
 # alpha_meas_list = RESULTS['FWHM'].coords['alpha_meas'].values
 alpha_meas_list = RESULTS['FWHM'].coords['alpha_meas'].values[3:]
 VERTEX_LIST = RESULTS['FWHM'].vertex.values
@@ -142,6 +143,7 @@ def plot_metric(ax, metric_name, y_label, colors, ls_list):
     ax.grid(True)
 
 #%% PLOT SETTINGS
+vline_val = 1e4
 fig = plt.figure(figsize=[80, 50]) 
 gs = gridspec.GridSpec(2, 3, wspace=0.25, hspace=0.3)  # All rows have equal height
 
@@ -166,6 +168,7 @@ axes = [fig.add_subplot(gs[i // 3, i % 3]) for i in range(len(metrics))]
 
 #% PLOT ALL METRICS
 for (metric_name, y_label), ax in zip(metrics, axes):
+    ax.axvline(vline_val, color='k', linestyle='--', lw=30)
     plot_metric(ax, metric_name, y_label, colors, ls_list)
 
 # Apply log y-scale to selected plots
@@ -188,7 +191,7 @@ for ii, sigma_brain in enumerate(sigma_brain_list):
 
 #% LEGEND
 handles, labels = axes[0].get_legend_handles_labels()
-plt.subplots_adjust(bottom=0.28, top=0.95, left=0.03, right=0.95, hspace=0.4, wspace=0.5)
+plt.subplots_adjust(bottom=0.28, top=0.95, left=0.05, right=0.95, hspace=0.4, wspace=0.5)
 
 # Add a centered legend below all plots
 fig.legend(handles, labels,
@@ -201,8 +204,9 @@ fig.legend(handles, labels,
 #% SAVE FIGURE
 plt.tight_layout() 
 plt.savefig(
-    os.path.join(SAVE_PLOT, f'FIG5_task-{TASK}_blob-{BLOB_SIGMA}mm_assb-{alpha_spatial_sb}_asnosb-{alpha_spatial_nosb}_{NOISE_MODEL}_metrics_single_wl.png'),
-    dpi=200
+    os.path.join(SAVE_PLOT, f'FIG5_task-{TASK}_blob-{BLOB_SIGMA}mm_assb-{alpha_spatial_sb}_asnosb-{alpha_spatial_nosb}_lR-{float(lambda_R)}_{NOISE_MODEL}_metrics_single_wl.png'),
+    dpi=200,
+    # bbox_inches='tight'
 )
 plt.show()
 

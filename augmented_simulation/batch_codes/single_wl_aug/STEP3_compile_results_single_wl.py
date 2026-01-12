@@ -89,15 +89,15 @@ NOISE_MODEL = 'ar_irls'
 TASK = 'RS'
 VERTEX_LIST = [10089, 10453, 14673, 11323, 13685, 11702, 8337]
 SCALE_FACTOR = 0.02
-
-alpha_meas_list = [10 ** i for i in range(-6, 6)]
-alpha_spatial_list = [1e-3, 1e-2]
+lambda_R = 0.25e-6
+alpha_meas_list = [10 ** i for i in range(-4, 9)]
+alpha_spatial_list = [1e-4, 1e-3, 1e-2, 1e-1]
 sigma_brain_list = [0, 1, 3, 5]
 sigma_scalp_list = [0, 1, 5, 10, 20]
 EXCLUDED = ['sub-577']
 
 SAVE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'augmented_data')
-BATCH_DIR = os.path.join(SAVE_DIR, 'batch_results')
+BATCH_DIR = os.path.join(SAVE_DIR, 'batch_results', 'single_wl')
 
 dirs = os.listdir(ROOT_DIR)
 subject_list = [d for d in dirs if 'sub' in d and d not in EXCLUDED]
@@ -131,7 +131,7 @@ for sigma_brain in sigma_brain_list:
             
             for alpha_spatial in alpha_spatial_list:
                 
-                with open(os.path.join(BATCH_DIR, f'COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_sb-{float(sigma_brain)}_ss-{float(sigma_scalp)}_am-{float(alpha_meas)}_as-{float(alpha_spatial)}_{NOISE_MODEL}_single_wl.pkl'), 'rb') as f:
+                with open(os.path.join(BATCH_DIR, f'COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_sb-{float(sigma_brain)}_ss-{float(sigma_scalp)}_am-{float(alpha_meas)}_as-{float(alpha_spatial)}_lR-{float(lambda_R)}_{NOISE_MODEL}_single_wl.pkl'), 'rb') as f:
                     RESULTS = pickle.load(f)
                 
                 FWHM.loc[alpha_meas, alpha_spatial, sigma_brain, sigma_scalp, :] = RESULTS['FWHM'].squeeze()
@@ -152,7 +152,7 @@ RESULTS = {
             'contrast_ratio': contrast_ratio,
            }
                                     
-with open(os.path.join(SAVE_DIR, f'COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_{NOISE_MODEL}_single_wl.pkl'), 'wb') as f:
+with open(os.path.join(SAVE_DIR, f'COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_lR-{lambda_R}_{NOISE_MODEL}_single_wl.pkl'), 'wb') as f:
      pickle.dump(RESULTS, f)
 
 

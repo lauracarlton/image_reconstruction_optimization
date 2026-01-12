@@ -88,24 +88,28 @@ BLOB_SIGMA = 15
 SCALE_FACTOR = 0.02
 NOISE_MODEL = 'ar_irls'
 TASK = 'RS'
+vline_val = 1e4
 
 alpha_spatial_sb = 1e-2
-alpha_spatial_nosb = 1e-2
+alpha_spatial_nosb = 1e-3
 sigma_brain = 1
 sigma_scalp = 5
-
+lambda_R = 1e-6
 #%% LOAD DATA
 SAVE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'augmented_data')
 SAVE_PLOT = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'figures')
 
 os.makedirs(SAVE_PLOT, exist_ok=True)
 
-with open(os.path.join(SAVE_DIR, f'COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_{NOISE_MODEL}_dual_wl.pkl'), 'rb') as f:
+with open(os.path.join(SAVE_DIR, f'COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_lR-{lambda_R}_{NOISE_MODEL}_dual_wl.pkl'), 'rb') as f:
     RESULTS = pickle.load(f)
 
 # alpha_meas_list = RESULTS['FWHM'].coords['alpha_meas'].values
 alpha_meas_list = RESULTS['FWHM_HbO_direct'].coords['alpha_meas'].values[3:]
 VERTEX_LIST = RESULTS['FWHM_HbO_direct'].vertex.values
+RESULTS['FWHM_HbO_direct'] = RESULTS['FWHM_HbO_direct'] 
+RESULTS['FWHM_HbO_indirect'] = RESULTS['FWHM_HbO_indirect'] 
+
 
 #%% HELPER FUNCTIONS
 def mean_se(data):
@@ -123,9 +127,9 @@ def plot_metric(ax, metric_name, y_label, colors):
     # Define condition sets
     conditions = [
         dict(sigma_brain=sigma_brain, sigma_scalp=sigma_scalp, alpha_spatial=alpha_spatial_sb, alpha_meas=alpha_meas_list,
-             color=colors[2:], label=f'$\\sigma_{{brain}}$={sigma_brain} mm; $\\sigma_{{scalp}}$={sigma_scalp} mm'),
+             color=colors[1], label=f'$\\sigma_{{brain}}$ = {sigma_brain} mm; $\\sigma_{{scalp}}$ = {sigma_scalp} mm'),
         dict(sigma_brain=0, sigma_scalp=0, alpha_spatial=alpha_spatial_nosb, alpha_meas=alpha_meas_list,
-             color=colors[:2], label='No Spatial Basis')
+             color=colors[0], label='No Spatial Basis')
     ]
 
     for cond in conditions:
@@ -136,15 +140,15 @@ def plot_metric(ax, metric_name, y_label, colors):
         ax.errorbar(alpha_meas_list*0.7,
                     mean_dir.sel(**cond),
                     se_dir.sel(**cond),
-                    color=color[0], lw=lw, capsize=capsize, capthick=capthick,
-                    label='DIRECT: ' + label)
+                    color=color, lw=lw, ls='-', capsize=capsize, capthick=capthick,
+                    label=label)
 
         # Indirect 
         ax.errorbar(alpha_meas_list*1.3,
                     mean_ind.sel(**cond),
                     se_ind.sel(**cond),
-                    color=color[1], lw=lw, capsize=capsize, capthick=capthick,
-                    label='INDIRECT: ' + label)
+                    color=color, lw=lw, ls='--', capsize=capsize, capthick=capthick,
+                    )
 
     ax.set_ylabel(y_label)
     ax.set_xlabel('$\\alpha_{meas}$')
@@ -153,7 +157,7 @@ def plot_metric(ax, metric_name, y_label, colors):
 
 
 #%% COLORS & PLOT SETTINGS
-fig = plt.figure(figsize=(80, 40))
+fig = plt.figure(figsize=(90, 40))
 gs = gridspec.GridSpec(2, 4)
 
 cmap = sns.color_palette("Spectral", as_cmap=True)
@@ -174,11 +178,12 @@ mean_dir, _ = mean_se(RESULTS['FWHM_HbO_direct'])
 mean_ind, _ = mean_se(RESULTS['FWHM_HbO_indirect'])
 
 axes = [fig.add_subplot(gs[i // 4, i % 4]) for i in range(len(metrics))]
-# axes[0].plot(alpha_meas_list[0], mean_dir[0].isel(sigma_brain=0, sigma_scalp=0, alpha_spatial=0), '-k', label='Direct', lw=lw-1)
-# axes[0].plot(alpha_meas_list[0], mean_ind[0].isel(sigma_brain=0, sigma_scalp=0, alpha_spatial=0), '--k', label='Indirect', lw=lw-1)
+axes[0].plot(alpha_meas_list[0], mean_dir[0].isel(sigma_brain=0, sigma_scalp=0, alpha_spatial=0), '-k', label='Direct', lw=lw-1)
+axes[0].plot(alpha_meas_list[0], mean_ind[0].isel(sigma_brain=0, sigma_scalp=0, alpha_spatial=0), '--k', label='Indirect', lw=lw-1)
 
 #% PLOT ALL METRICS
 for (metric_name, y_label), ax in zip(metrics, axes):
+    ax.axvline(vline_val, color='k', linestyle='--', lw=30)
     plot_metric(ax, metric_name, y_label, colors)
 
 # Apply log y-scale to specific plot if desired
@@ -189,11 +194,11 @@ axes[1].set_yscale('log')  # CNR
 legend_ax = fig.add_subplot(gs[1, 3])
 legend_ax.axis('off')
 handles, labels = axes[0].get_legend_handles_labels()
-legend_ax.legend(handles, labels, loc='center', ncol=1)
+legend_ax.legend(handles, labels, loc='center', ncol=1, fontsize=100)
 
 plt.tight_layout()
 plt.savefig(
-    os.path.join(SAVE_PLOT, f'FIG6_task-{TASK}_blob-{BLOB_SIGMA}mm_assb-{alpha_spatial_sb}_asnosb-{alpha_spatial_nosb}_{NOISE_MODEL}_metrics_dual_wl.png'), 
+    os.path.join(SAVE_PLOT, f'FIG6_task-{TASK}_blob-{BLOB_SIGMA}mm_assb-{alpha_spatial_sb}_asnosb-{alpha_spatial_nosb}_lR-{float(lambda_R)}_{NOISE_MODEL}_metrics_dual_wl.png'), 
     dpi=200
 )
 plt.show()
