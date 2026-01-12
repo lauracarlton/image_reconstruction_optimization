@@ -17,14 +17,14 @@ Edit the CONFIG section (ROOT_DIR, TASK, alpha_meas_list, etc.) then run::
 Inputs
 ------
 - Individual pickle files from dual_wl_metrics_batch_aug.py located in
-  <ROOT_DIR>/derivatives/cedalion/augmented_data/batch_results/
-  with filename pattern: COMPILED_METRIC_RESULTS_{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_sb-{sigma_brain}_ss-{sigma_scalp}_am-{alpha_meas}_as-{alpha_spatial}_{GLM_METHOD}_dual_wl.pkl
+  <ROOT_DIR>/derivatives/cedalion/augmented_data/batch_results/dual_wl/
+  with filename pattern: COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_sb-{sigma_brain}_ss-{sigma_scalp}_am-{alpha_meas}_as-{alpha_spatial}_lR-{lambda_R}_{GLM_METHOD}_dual_wl.pkl
   containing reconstruction metrics for each parameter combination.
 
 Configurables (defaults shown)
 -----------------------------
 Data Storage Parameters:
-- ROOT_DIR (str): '/projectnb/nphfnirs/s/datasets/BSMW_Laura_Miray_2025/BS_bids'
+- ROOT_DIR (str): '/projectnb/nphfnirs/s/datasets/BSMW_Laura_Miray_2025/BS_bids_v2'
     - Root directory containing batch results.
 - EXCLUDED (list[str]): ['sub-577']
     - Subject IDs to skip during processing.
@@ -36,7 +36,7 @@ Augmentation Parameters (must match batch scripts):
     - Task identifier matching the augmented dataset.
 - SCALE_FACTOR (float): 0.02
     - Amplitude of synthetic activation.
-- NOISE_MODEL (str): 'ols'
+- NOISE_MODEL (str): 'ar_irls'
     - GLM method used in variance estimation (ols or ar_irls).
 - VERTEX_LIST (list[int]): [10089, 10453, 14673, 11323, 13685, 11702, 8337]
     - List of seed vertex indices used in simulations.
@@ -50,6 +50,8 @@ Parameter Grid (must match batch submission):
     - Brain spatial basis widths tested (mm).
 - sigma_scalp_list (list[int]): [0, 1, 5, 10, 20]
     - Scalp spatial basis widths tested (mm).
+- lambda_R (float): 1e-6
+    - scaling parameter for the image prior used in reconstruction.
 
 Compilation Logic:
 - Skips invalid combinations where sigma_brain=0 and sigma_scalp!=0, or vice versa.
@@ -59,7 +61,7 @@ Outputs
 -------
 - Compiled results saved as pickle file to
   <ROOT_DIR>/derivatives/cedalion/augmented_data/
-  with filename: COMPILED_METRIC_RESULTS_blob-{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_{GLM_METHOD}_dual_wl.pkl
+  with filename: COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_lR-{lambda_R}_{GLM_METHOD}_dual_wl.pkl
   containing dictionary with xarray DataArrays (dimensions: [alpha_meas, alpha_spatial, 
   sigma_brain, sigma_scalp, vertex]) for the following metrics:
   - FWHM_HbO_direct/indirect: Full width at half maximum

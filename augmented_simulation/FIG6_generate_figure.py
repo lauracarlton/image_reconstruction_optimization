@@ -17,9 +17,9 @@ Edit the CONFIG section (ROOT_DIR, BLOB_SIGMA, TASK, etc.) then run::
 
 Inputs
 ------
-- Gzipped pickle file from FIG6_STEP2_get_dual_wavelength_image_metrics.py
-  located at <ROOT_DIR>/derivatives/cedalion/augmented_data/ with filename:
-  COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_dual_wl_{GLM_METHOD}.pkl
+- Pickle file from STEP3_compile_results_dual_wl.py located at
+  <ROOT_DIR>/derivatives/cedalion/augmented_data/ with filename:
+  COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_lR-{lambda_R}_{NOISE_MODEL}_dual_wl.pkl
   containing dual-wavelength reconstruction metrics for various alpha_meas,
   alpha_spatial, sigma_brain, sigma_scalp values, and seed vertex configurations.
 
@@ -36,8 +36,9 @@ Augmentation Parameters (must match STEP2):
     - Task identifier matching the augmented dataset.
 - SCALE_FACTOR (float): 0.02
     - Amplitude of the maximum change in 850nm OD in channel space.
-- NOISE_MODEL (str): 'ols'
+- NOISE_MODEL (str): 'ar_irls'
     - GLM solving method used in preprocessing of augmented data (ols or ar_irls).
+
 
 Plotting Parameters:
 - alpha_spatial_sb (float): 1e-2
@@ -48,11 +49,13 @@ Plotting Parameters:
     - Value of sigma_brain (mm) to use for spatial basis function plotting.
 - sigma_scalp (int): 5
     - Value of sigma_scalp (mm) to use for spatial basis function plotting.
-
+- lambda_R (float): 1e-6
+    - scaling parameter for the image prior used in reconstruction.
+    
 Outputs
 -------
 - Publication-ready figure (Figure 6) saved to <ROOT_DIR>/derivatives/cedalion/figures/
-  with filename: FIG6_augRS_dual_wl_assb-{alpha_spatial_sb}_asnosb-{alpha_spatial_nosb}_{GLM_METHOD}.png
+  with filename: FIG6_task-{TASK}_blob-{BLOB_SIGMA}mm_assb-{alpha_spatial_sb}_asnosb-{alpha_spatial_nosb}_lR-{lambda_R}_{NOISE_MODEL}_metrics_dual_wl.png
   showing 7 panels:
   - FWHM HbO vs alpha_meas
   - CNR HbO vs alpha_meas

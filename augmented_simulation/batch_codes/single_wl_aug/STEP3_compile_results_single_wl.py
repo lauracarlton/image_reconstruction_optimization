@@ -17,14 +17,14 @@ Edit the CONFIG section (ROOT_DIR, TASK, alpha_meas_list, etc.) then run::
 Inputs
 ------
 - Individual pickle files from single_wl_metrics_batch_aug.py located in
-  <ROOT_DIR>/derivatives/cedalion/augmented_data/batch_results/
-  with filename pattern: COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_sb-{sigma_brain}_ss-{sigma_scalp}_am-{alpha_meas}_as-{alpha_spatial}_{NOISE_MODEL}_single_wl.pkl
+  <ROOT_DIR>/derivatives/cedalion/augmented_data/batch_results/single_wl/
+  with filename pattern: COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_sb-{sigma_brain}_ss-{sigma_scalp}_am-{alpha_meas}_as-{alpha_spatial}_lR-{lambda_R}_{NOISE_MODEL}_single_wl.pkl
   containing reconstruction metrics for each parameter combination.
 
 Configurables (defaults shown)
 -----------------------------
 Data Storage Parameters:
-- ROOT_DIR (str): '/projectnb/nphfnirs/s/datasets/BSMW_Laura_Miray_2025/BS_bids'
+- ROOT_DIR (str): '/projectnb/nphfnirs/s/datasets/BSMW_Laura_Miray_2025/BS_bids_v2'
     - Root directory containing batch results.
 - EXCLUDED (list[str]): ['sub-577']
     - Subject IDs to skip during processing.
@@ -36,20 +36,22 @@ Augmentation Parameters (must match batch scripts):
     - Task identifier matching the augmented dataset.
 - SCALE_FACTOR (float): 0.02
     - Amplitude of synthetic activation.
-- NOISE_MODEL (str): 'ols'
+- NOISE_MODEL (str): 'ar_irls'
     - GLM method used in variance estimation (ols or ar_irls).
 - VERTEX_LIST (list[int]): [10089, 10453, 14673, 11323, 13685, 11702, 8337]
     - List of seed vertex indices used in simulations.
 
 Parameter Grid (must match batch submission):
-- alpha_meas_list (list[float]): [10 ** i for i in range(-1, 3)]
-    - Measurement regularization values tested (0.1, 1, 10, 100).
-- alpha_spatial_list (list[float]): [1e-3, 1e-2]
-    - Spatial regularization values tested.
+- alpha_meas_list (list[float]): [10 ** i for i in range(-4, 9)]
+    - Measurement regularization values tested (1e-4 to 1e8).
+- alpha_spatial_list (list[float]): [1e-4, 1e-3, 1e-2, 1e-1]
+    - Spatial regularization values tested (0.0001, 0.001, 0.01, 0.1).
 - sigma_brain_list (list[int]): [0, 1, 3, 5]
     - Brain spatial basis widths tested (mm).
 - sigma_scalp_list (list[int]): [0, 1, 5, 10, 20]
     - Scalp spatial basis widths tested (mm).
+- lambda_R (float): 1e-6
+    - scaling parameter for the image prior used in reconstruction.
 
 Compilation Logic:
 - Skips invalid combinations where sigma_brain=0 and sigma_scalp!=0, or vice versa.
@@ -59,7 +61,7 @@ Outputs
 -------
 - Compiled results saved as pickle file to
   <ROOT_DIR>/derivatives/cedalion/augmented_data/
-  with filename: COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_{NOISE_MODEL}_single_wl.pkl
+  with filename: COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_lR-{lambda_R}_{NOISE_MODEL}_single_wl.pkl
   containing dictionary with xarray DataArrays (dimensions: [alpha_meas, alpha_spatial, 
   sigma_brain, sigma_scalp, vertex]) for the following metrics:
   - FWHM: Full width at half maximum of reconstructed activation
@@ -89,12 +91,13 @@ NOISE_MODEL = 'ar_irls'
 TASK = 'RS'
 VERTEX_LIST = [10089, 10453, 14673, 11323, 13685, 11702, 8337]
 SCALE_FACTOR = 0.02
-lambda_R = 0.25e-6
+EXCLUDED = ['sub-577']
+lambda_R = 1e-6
+
 alpha_meas_list = [10 ** i for i in range(-4, 9)]
 alpha_spatial_list = [1e-4, 1e-3, 1e-2, 1e-1]
 sigma_brain_list = [0, 1, 3, 5]
 sigma_scalp_list = [0, 1, 5, 10, 20]
-EXCLUDED = ['sub-577']
 
 SAVE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'augmented_data')
 BATCH_DIR = os.path.join(SAVE_DIR, 'batch_results', 'single_wl')

@@ -1,35 +1,79 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Thu Jan 16 12:03:03 2025
+processing_func.py
 
-@author: lcarlton
+fNIRS data preprocessing and GLM analysis utilities. This module provides
+functions for quality control, channel pruning, temporal filtering, General
+Linear Model (GLM) analysis with various noise models, and spatial smoothing
+of reconstructed images.
+
+Key Functionality:
+- Channel quality control: Prune channels based on amplitude, SNR, and SD distance
+- GLM analysis: Fit hemodynamic response functions with drift and short-separation regression
+- Run concatenation: Combine multiple runs for group-level analysis
+- Spatial smoothing: Apply Gaussian kernels and PCA-based smoothing to images
+- Design matrix construction: Build regressors for drift, short channels, and HRF
+
+Supported GLM noise models:
+- OLS (Ordinary Least Squares): Requires TDDR motion correction and drift regressors
+- AR-IRLS (Autoregressive Iteratively Reweighted Least Squares): Uses Legendre drift
+
+Author: Laura Carlton | lcarlton@bu.edu
+Created: January 16, 2025
 """
 
-
-import cedalion
-import cedalion.datasets as datasets
-import cedalion.imagereco.forward_model as fw
-import cedalion.io as io
-import cedalion.models.glm as glm
-import cedalion.nirs as nirs
-from scipy.spatial.distance import cdist
-import cedalion.sigproc.frequency as frequency
-from cedalion.sigproc import quality 
-import pandas as pd
-import xarray as xr
-from cedalion import units
-import cedalion.sigproc.motion_correct as motion
-import numpy as np
-import os.path
-import pickle
 from functools import reduce
-import cedalion.xrutils as xrutils 
 import operator
 
+import numpy as np
+import pandas as pd
+import xarray as xr
+from scipy.spatial.distance import cdist
+
+import cedalion.models.glm as glm
+import cedalion.nirs as nirs
+import cedalion.sigproc.frequency as frequency
+from cedalion import units
+from cedalion.sigproc import quality
 
 
 def prune_channels(rec, amp_thresh=[1e-3, 0.84]*units.V, sd_thresh=[0, 45]*units.mm, snr_thresh=5):
+    """
+    Identify and flag poor quality channels based on multiple criteria.
+    
+    Applies quality control metrics including source-detector distance, mean amplitude,
+    and signal-to-noise ratio. Returns a quality score for each channel ranging from
+    0.0 (worst) to 1.0 (best) with intermediate values for specific failure modes.
+    
+    Parameters
+    ----------
+    rec : dict
+        Recording containing 'amp' (amplitude data) and geo3d (geometry).
+    amp_thresh : cedalion.Quantity, optional
+        [min, max] amplitude thresholds in Volts (default: [1e-3, 0.84] V).
+        Channels outside this range are flagged.
+    sd_thresh : cedalion.Quantity, optional
+        [min, max] source-detector distance thresholds in mm (default: [0, 45] mm).
+    snr_thresh : float, optional
+        Minimum signal-to-noise ratio threshold (default: 5).
+    
+    Returns
+    -------
+    rec : dict
+        Updated recording with 'amp_pruned' field containing data with flagged channels.
+    chs_pruned : xr.DataArray
+        Quality scores for each channel with dimensions (channel,):
+        - 0.0: Saturated (amplitude too high) or too low
+        - 0.19: Failed SNR threshold
+        - 0.4: Passed all tests (default/good)
+        - 0.8: Amplitude below minimum but above zero
+        
+    Notes
+    -----
+    Uses cedalion.sigproc.quality module for individual metric calculations.
+    The quality scores allow downstream functions to weight or exclude channels.
+    """
     
     amp_thresh_sat = [0.*units.V, amp_thresh[1]]
     amp_thresh_low = [amp_thresh[0], 1*units.V]
@@ -56,21 +100,38 @@ def prune_channels(rec, amp_thresh=[1e-3, 0.84]*units.V, sd_thresh=[0, 45]*units
 
 
 def prune_mask_ts(ts, pruned_chans):
-    '''
-    Function to mask pruned channels with NaN .. essentially repruning channels
+    """
+    Mask pruned channels in time series data with NaN values.
+    
+    Replaces data for specified channels with NaN to exclude them from analysis
+    while preserving array structure and coordinates. Supports both (channel, wavelength, time)
+    and (chromo, channel, time) dimension orderings.
+    
     Parameters
     ----------
-    ts : data array
-        time series from rec[rec_str].
-    pruned_chans : list or array
-        list or array of channels that were pruned prior.
-
+    ts : xr.DataArray
+        Time series data with dimensions including 'channel' and 'time'.
+        Expected shapes:
+        - (channel, wavelength, time) for raw optical density data
+        - (chromo, channel, time) for concentration data
+    pruned_chans : array-like
+        List or array of channel labels to mask with NaN.
+    
     Returns
     -------
-    ts_masked : data array
-        time series that has been "repruned" or masked with data for the pruned channels as NaN.
-
-    '''
+    ts_masked : xr.DataArray
+        Time series with specified channels replaced by NaN.
+        
+    Raises
+    ------
+    ValueError
+        If input shape doesn't match expected (chan, dim, time) or (dim, chan, time) patterns.
+        
+    Notes
+    -----
+    Automatically detects dimension ordering and broadcasts mask appropriately.
+    Preserves all coordinates and attributes from input.
+    """
     mask = np.isin(ts.channel.values, pruned_chans)
     
     if ts.ndim == 3 and ts.shape[0] == len(ts.channel):
@@ -84,6 +145,31 @@ def prune_mask_ts(ts, pruned_chans):
     return ts_masked
 
 def median_filter(rec, median_filt = 3):
+    """
+    Apply temporal median filter to amplitude data.
+    
+    Applies a rolling median filter along the time dimension to reduce spike artifacts
+    while preserving signal edges better than mean filtering. Uses edge padding to
+    avoid boundary artifacts.
+    
+    Parameters
+    ----------
+    rec : dict
+        Recording dictionary containing 'amp' field with time series data.
+    median_filt : int, optional
+        Window size for median filter in samples (default: 3).
+        Should be odd for symmetric filtering.
+    
+    Returns
+    -------
+    rec : dict
+        Updated recording with filtered 'amp' data.
+        
+    Notes
+    -----
+    Pads data using 'edge' mode (repeats boundary values) to handle start/end points.
+    Applies xr.DataArray.rolling().reduce(np.median) for computation.
+    """
     pad_width = 1  # Adjust based on the kernel size
     padded_amp = rec['amp'].pad(time=(pad_width, pad_width), mode='edge')
     # Apply the median filter to the padded data
@@ -95,6 +181,55 @@ def median_filter(rec, median_filt = 3):
 #%% GLM FUNCTIONALITY 
 
 def GLM(runs, cfg_GLM, geo3d, pruned_chans_list, stim_list):
+    """
+    Fit General Linear Model to estimate hemodynamic response functions.
+    
+    Performs GLM analysis on fNIRS concentration data across one or more runs.
+    Constructs design matrix with HRF regressors, drift terms, and optional
+    short-separation regressors. Supports OLS and AR-IRLS noise models.
+    
+    Parameters
+    ----------
+    runs : list of xr.DataArray
+        List of concentration time series, one per run. Each with dimensions
+        (channel, chromo, time).
+    cfg_GLM : dict
+        Configuration dictionary containing:
+        - 't_pre', 't_post': Time window around events (cedalion.Quantity)
+        - 't_delta', 't_std': Gaussian basis function parameters (cedalion.Quantity)
+        - 'noise_model': 'ols' or 'ar_irls'
+        - 'do_drift': bool, include polynomial drift regressors
+        - 'do_drift_legendre': bool, include Legendre polynomial drift
+        - 'drift_order': int, polynomial order for drift
+        - 'do_short_sep': bool, include short-separation regressors
+        - 'distance_threshold': cedalion.Quantity, threshold for short channels
+        - 'short_channel_method': str, method for combining short channels
+    geo3d : xr.DataArray
+        3D optode geometry for identifying short-separation channels.
+    pruned_chans_list : list of xr.DataArray
+        List of channel quality scores, one per run, for masking short channels.
+    stim_list : list of pd.DataFrame
+        List of stimulus DataFrames, one per run, with columns:
+        ['onset', 'duration', 'trial_type']
+    
+    Returns
+    -------
+    results : GLMResults
+        Fitted GLM results from cedalion.models.glm.fit containing
+        regression coefficients and statistics.
+    hrf_estimate : xr.DataArray
+        Estimated HRF with dimensions (channel, chromo, time, trial_type).
+        Time coordinate is relative to event onset.
+    hrf_mse : xr.DataArray
+        Mean squared error of HRF estimate with dimensions
+        (channel, chromo, time, trial_type). Quantifies uncertainty.
+        
+    Notes
+    -----
+    Multiple runs are concatenated along time dimension before fitting.
+    Drift and short-separation regressors are computed per-run then combined.
+    HRF is estimated by projecting beta coefficients onto Gaussian basis.
+    """
 
     # 1. need to concatenate runs 
     if len(runs) > 1:
@@ -182,6 +317,34 @@ def GLM(runs, cfg_GLM, geo3d, pruned_chans_list, stim_list):
 
 
 def estimate_HRF_cov(cov, basis_hrf):
+    """
+    Compute covariance (uncertainty) of HRF estimate from beta covariance.
+    
+    Projects the covariance matrix of GLM regression coefficients onto the
+    Gaussian basis functions to obtain the time-varying uncertainty of the
+    HRF estimate: Var(HRF) = B^T * Cov(beta) * B where B is the basis matrix.
+    
+    Parameters
+    ----------
+    cov : xr.DataArray
+        Covariance matrix of beta coefficients with dimensions
+        (channel, chromo, regressor_r, regressor_c) where regressor dimensions
+        correspond to basis function coefficients.
+    basis_hrf : xr.DataArray
+        Gaussian basis functions with dimensions (component, channel, chromo, time)
+        defining the temporal shape of HRF regressors.
+    
+    Returns
+    -------
+    mse_t : xr.DataArray
+        Time-varying mean squared error (diagonal of HRF covariance) with
+        dimensions (channel, chromo, time).
+        
+    Notes
+    -----
+    Computation: B^T @ Cov @ B using xr.dot for dimension alignment.
+    Returns only diagonal (variance) not full covariance matrix.
+    """
 
     basis_hrf = basis_hrf.rename({'component':'regressor_c'})
     basis_hrf = basis_hrf.assign_coords(regressor_c=cov.regressor_c.values)
@@ -196,6 +359,32 @@ def estimate_HRF_cov(cov, basis_hrf):
     return mse_t
 
 def estimate_HRF_from_beta(betas, basis_hrf):
+    """
+    Reconstruct hemodynamic response function from GLM beta coefficients.
+    
+    Projects beta weights onto Gaussian basis functions to obtain the time-varying
+    HRF estimate: HRF(t) = sum_i beta_i * basis_i(t). Applies baseline correction
+    by subtracting pre-stimulus mean.
+    
+    Parameters
+    ----------
+    betas : xr.DataArray
+        GLM beta coefficients for HRF regressors with dimensions
+        (channel, chromo, regressor) where regressors correspond to basis functions.
+    basis_hrf : xr.DataArray
+        Gaussian basis functions with dimensions (component, channel, chromo, time).
+    
+    Returns
+    -------
+    hrf_estimates_blcorr : xr.DataArray
+        Baseline-corrected HRF estimate with dimensions (channel, chromo, time).
+        Pre-stimulus period (time < 0) is subtracted to zero baseline.
+        
+    Notes
+    -----
+    Uses xr.dot to compute weighted sum of basis functions.
+    Baseline correction removes pre-stimulus drift for cleaner HRF visualization.
+    """
         
     basis_hrf = basis_hrf.rename({'component':'regressor'})
     basis_hrf = basis_hrf.assign_coords(regressor=betas.regressor.values)
@@ -207,6 +396,31 @@ def estimate_HRF_from_beta(betas, basis_hrf):
     return hrf_estimates_blcorr
 
 def get_drift_regressors(runs, cfg_GLM):
+    """
+    Construct polynomial drift regressors for each run.
+    
+    Creates polynomial basis functions to model slow temporal drifts in the signal.
+    Used with OLS noise model to account for baseline fluctuations. Each run gets
+    independent drift regressors.
+    
+    Parameters
+    ----------
+    runs : list of xr.DataArray
+        List of time series data, one per run.
+    cfg_GLM : dict
+        Configuration containing 'drift_order' (int): polynomial degree.
+    
+    Returns
+    -------
+    drift_regressors : list of DesignMatrix
+        List of design matrices with drift regressors, one per run.
+        Regressors are labeled 'Drift {order} run {i}'.
+        
+    Notes
+    -----
+    Uses cedalion.models.glm.design_matrix.drift_regressors.
+    Typically used with OLS noise model. For AR-IRLS, use Legendre drift instead.
+    """
     
     drift_regressors = []
     i=0
@@ -218,6 +432,32 @@ def get_drift_regressors(runs, cfg_GLM):
     return drift_regressors
 
 def get_drift_legendre_regressors(runs, cfg_GLM):
+    """
+    Construct Legendre polynomial drift regressors for each run.
+    
+    Creates orthogonal Legendre polynomial basis functions to model slow drifts.
+    Preferred for AR-IRLS noise model due to better numerical properties.
+    Each run gets independent drift regressors.
+    
+    Parameters
+    ----------
+    runs : list of xr.DataArray
+        List of time series data, one per run.
+    cfg_GLM : dict
+        Configuration containing 'drift_order' (int): polynomial degree.
+    
+    Returns
+    -------
+    drift_regressors : list of DesignMatrix
+        List of design matrices with Legendre drift regressors, one per run.
+        Regressors are labeled 'Drift {order} run {i}'.
+        
+    Notes
+    -----
+    Uses cedalion.models.glm.design_matrix.drift_legendre_regressors.
+    Legendre polynomials are orthogonal, improving GLM stability.
+    Recommended for AR-IRLS noise model.
+    """
 
     drift_regressors = []
     i=0
@@ -230,6 +470,39 @@ def get_drift_legendre_regressors(runs, cfg_GLM):
     return drift_regressors
 
 def get_short_regressors(runs, pruned_chans_list, geo3d, cfg_GLM):
+    """
+    Construct short-separation channel regressors for each run.
+    
+    Creates regressors from short-separation channels to model systemic physiological
+    noise (cardiac, respiratory, blood pressure) that affects both short and long
+    channels. Helps remove superficial scalp signals from brain signals.
+    
+    Parameters
+    ----------
+    runs : list of xr.DataArray
+        List of concentration time series, one per run.
+    pruned_chans_list : list of xr.DataArray
+        List of channel quality scores for masking poor channels in short-channel
+        identification.
+    geo3d : xr.DataArray
+        3D optode geometry for computing source-detector distances.
+    cfg_GLM : dict
+        Configuration containing:
+        - 'distance_threshold': cedalion.Quantity, max distance for short channels (e.g., 20 mm)
+        - 'short_channel_method': str, aggregation method ('mean', 'pca', etc.)
+    
+    Returns
+    -------
+    ss_regressors : list of DesignMatrix
+        List of design matrices with short-separation regressors, one per run.
+        Each labeled 'short run {i}'.
+        
+    Notes
+    -----
+    Short channels (SD distance < threshold) primarily measure scalp hemodynamics.
+    Including these as regressors helps isolate brain signal in long channels.
+    Poor quality channels are masked before computing short-channel average.
+    """
     ss_regressors = []
     i=0
     for run, pruned_chans in zip(runs, pruned_chans_list):
@@ -248,6 +521,38 @@ def get_short_regressors(runs, pruned_chans_list, geo3d, cfg_GLM):
     return ss_regressors
 
 def concatenate_runs(runs, stim):
+    """
+    Concatenate multiple runs along time dimension for joint analysis.
+    
+    Combines time series and stimulus timing from multiple runs into single
+    continuous arrays. Adjusts time coordinates and stimulus onsets to maintain
+    temporal continuity. Enables fitting a single GLM across all runs.
+    
+    Parameters
+    ----------
+    runs : list of xr.DataArray
+        List of concentration time series, one per run, with dimensions
+        (channel, chromo, time).
+    stim : list of pd.DataFrame
+        List of stimulus DataFrames, one per run, with columns:
+        ['onset', 'duration', 'trial_type']
+    
+    Returns
+    -------
+    Y_all : xr.DataArray
+        Concatenated time series with dimensions (channel, chromo, time).
+        Time coordinates adjusted to be continuous across runs.
+    stim_df : pd.DataFrame
+        Concatenated stimulus DataFrame with adjusted onset times.
+    runs_updated : list of xr.DataArray
+        List of runs with updated time coordinates (for design matrix construction).
+        
+    Notes
+    -----
+    Time offset for each run is computed as: offset_i = last_time_{i-1} + dt
+    All runs are converted to 'molar' units before concatenation.
+    Maintains sampling rate continuity between runs.
+    """
 
     CURRENT_OFFSET = 0
     runs_updated = []
@@ -278,6 +583,37 @@ def concatenate_runs(runs, stim):
 #%% SPATIAL SMOOTHING 
 
 def get_spatial_smoothing_kernel(V_ras, sigma_mm=80*units.mm):
+    """
+    Construct Gaussian spatial smoothing kernel for surface mesh.
+    
+    Creates a normalized Gaussian weight matrix where each row represents smoothing
+    weights for one vertex based on Euclidean distances to all other vertices.
+    Used to spatially smooth reconstructed images on brain/scalp surfaces.
+    
+    Parameters
+    ----------
+    V_ras : numpy.ndarray
+        Vertex coordinates with shape (n_vertices, 3) in RAS orientation (mm).
+    sigma_mm : cedalion.Quantity, optional
+        Standard deviation of Gaussian kernel in mm (default: 80 mm).
+        Controls smoothness scale.
+    
+    Returns
+    -------
+    W : numpy.ndarray
+        Smoothing kernel matrix with shape (n_vertices, n_vertices) where
+        W[i,j] is the weight for vertex j when smoothing vertex i.
+        Each row sums to 1.0 (normalized). Weights below 1e-3 are set to 0.
+        
+    Notes
+    -----
+    Computation uses memory-efficient in-place operations:
+    - W[i,j] = exp(-D[i,j]^2 / sigma^2) / row_sum[i]
+    - Small weights (<1e-3) are zeroed for sparsity
+    - Handles zero row sums (isolated vertices) by setting to 1.0
+    
+    Uses float32 precision to reduce memory usage for large meshes.
+    """
 
     # distance matrix. float32 cuts memory in half vs float64
     D = cdist(V_ras.astype(np.float32), V_ras.astype(np.float32))  # shape (N, N), distances in mm
@@ -301,39 +637,79 @@ def get_spatial_smoothing_kernel(V_ras, sigma_mm=80*units.mm):
     
 def compute_Hglobal_from_PCA(data_xr, variances, W):
     """
-    data_xr: xarray.DataArray with dims ('trial_type','subj','chromo','vertex','reltime' or 'time')
-    W: (P x P) Gaussian smoothing operator over vertices (same vertex indexing as data_xr)
-    returns: xarray.DataArray H_global with same shape/coords/units as data_xr
+    Apply PCA-based spatial smoothing to reconstructed fNIRS images.
+    
+    Performs singular value decomposition (SVD) on mean-centered image time series,
+    smooths the spatial principal components using a Gaussian kernel, then reconstructs
+    the smoothed images. This preserves temporal dynamics while reducing spatial noise.
+    
+    Algorithm:
+    1. For each (trial_type, subject, chromophore) slice:
+       a. Extract image time series H as (time × vertex) matrix
+       b. Mean-center: H_centered = H - mean(H, axis=time)
+       c. SVD: H_centered = U @ diag(S) @ V^T
+       d. Smooth spatial PCs: V* = W @ V (equivalently V*^T = V^T @ W^T)
+       e. Reconstruct: H_smoothed = U @ diag(S) @ V*^T + mean
+    
+    Parameters
+    ----------
+    data_xr : xr.DataArray
+        Reconstructed images with dimensions:
+        - Required: ('subj', 'chromo', 'vertex', 'time' or 'reltime')
+        - Optional: 'trial_type' (for event-related analyses)
+    variances : xr.DataArray
+        Variance estimates with matching dimensions (currently unused but kept
+        for future variance-weighted smoothing).
+    W : numpy.ndarray
+        Gaussian smoothing kernel with shape (n_vertices, n_vertices) where
+        W[i,j] is weight of vertex j in smoothing vertex i. Typically from
+        get_spatial_smoothing_kernel().
+    
+    Returns
+    -------
+    Hglob : xr.DataArray
+        Spatially smoothed images with same shape, coordinates, and units as input.
+        Dimension order is preserved: ['trial_type'(if present), 'subj', 'chromo',
+        'vertex', 'time'/'reltime'].
+        
+    Notes
+    -----
+    - Uses economy SVD (full_matrices=False) for efficiency
+    - Processes each slice independently to reduce memory usage
+    - Normalizes smoothing kernel rows to sum to 1.0 before application
+    - Handles units by temporarily removing them during computation
+    - Time dimension can be named 'time' or 'reltime'
+    
+    Memory optimization:
+    - Uses float32 for intermediate computations
+    - Pre-allocates output array
+    - Avoids creating full covariance matrices
     """
-    # figure out time dim name
+    # Figure out time dimension name
     time_dim = 'reltime' if 'reltime' in data_xr.dims else 'time'
 
-    # drop units for speed / to avoid pint assignment issues
+    # Drop units for speed and to avoid pint assignment issues
     has_units = hasattr(data_xr, 'pint') and getattr(data_xr.pint, 'units', None) is not None
     units = data_xr.pint.units if has_units else None
     dx = data_xr.pint.dequantify() if has_units else data_xr
 
-    # output container (unitless for now)
+    # Output container (unitless for now)
     Hglob = dx.copy(deep=True)
 
-    # precompute W^T once
-    # WT = W.T.astype(np.float32, copy=False)
     W_orig = W.copy()
-    # build label->index maps for fast .data assignment
-
-
+    
+    # Build label->index maps for fast .data assignment
     tt_idx = {v: i for i, v in enumerate(dx.trial_type.values)} if "trial_type" in dx.dims else None
     sj_idx = {v:i for i,v in enumerate(dx.subj.values)}
     ch_idx = {v:i for i,v in enumerate(dx.chromo.values)}
 
     trial_types = dx.trial_type.values if "trial_type" in dx.dims else [None]
 
-    # iterate slices
+    # Iterate over slices
     for tt in trial_types:
         for sj in dx.subj.values:
             for ch in dx.chromo.values:
-                # H slice as (T x P)
-
+                # Extract H slice as (time × vertex)
                 sel_dict = dict(subj=sj, chromo=ch)
                 if tt is not None:
                     sel_dict["trial_type"] = tt
@@ -341,7 +717,7 @@ def compute_Hglobal_from_PCA(data_xr, variances, W):
                 H = dx.sel(sel_dict).transpose(time_dim, 'vertex').values.astype(np.float32, copy=False)
                 var = variances.sel(sel_dict).values
 
-                W = W_orig # / var
+                W = W_orig
                 row_sums = W.sum(axis=1, keepdims=True)
                 row_sums[row_sums == 0] = 1.0
                 W /= row_sums
@@ -351,28 +727,27 @@ def compute_Hglobal_from_PCA(data_xr, variances, W):
                 mean = H.mean(axis=1, keepdims=True)
                 H_centered = H - mean
                 
-                # economy SVD: H = U @ diag(S) @ Vt
-                U, S, Vt = np.linalg.svd(H_centered, full_matrices=False)   # U:(T,r), S:(r,), Vt:(r,P)
-                # smooth spatial PCs: Vt* = Vt @ W^T  (since V* = W @ V, and (V*)^T = V^T W^T)
-                Vt_star = Vt @ WT                                   # (r,P)              
-                Hglob_slice = U @ np.diag(S) @ Vt_star  # (use broadcasting for diag(S))
-
-                # 4) reconstruct the smoothed-global in vertex space and add back mean
-                Hglob_slice_recon = Hglob_slice + mean
-
-                # Hglob_slice = (U * S) @ Vt_star                     # (T,P)
+                # Economy SVD: H = U @ diag(S) @ V^T
+                U, S, Vt = np.linalg.svd(H_centered, full_matrices=False)
                 
-                # write back as (vertex x time)
+                # Smooth spatial PCs: V*^T = V^T @ W^T
+                Vt_star = Vt @ WT
+                
+                # Reconstruct smoothed image
+                Hglob_slice = U @ np.diag(S) @ Vt_star
+                Hglob_slice_recon = Hglob_slice + mean
+                
+                # Write back as (vertex × time)
                 if tt is not None:
                     Hglob.data[tt_idx[tt], sj_idx[sj], ch_idx[ch], :, :] = Hglob_slice_recon.T
                 else:
                     Hglob.data[sj_idx[sj], ch_idx[ch], :, :] = Hglob_slice_recon.T
-    # reattach units if present
+    
+    # Reattach units if present
     if has_units:
         Hglob = Hglob.pint.quantify(units)
 
     final_dims = ['trial_type'] if 'trial_type' in dx.dims else []
     final_dims += ['subj', 'chromo', 'vertex', time_dim]
 
-    # return with original dim order
-    return Hglob.transpose(*final_dims)
+     return Hglob.transpose(*final_dims)

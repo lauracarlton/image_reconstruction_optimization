@@ -35,7 +35,7 @@
 # Outputs:
 # - Stdout/stderr are redirected to the SGE -o/-e paths defined above.
 # - The called Python script will write individual metric result pickles under
-#   the project's derivatives/cedalion/augmented_data/batch_results/ folder.
+#   the project's derivatives/cedalion/augmented_data/batch_results/single_wl/ folder.
 # ---------------------------------------------------------------------------
 
 

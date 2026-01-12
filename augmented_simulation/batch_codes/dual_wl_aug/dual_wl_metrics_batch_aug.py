@@ -26,17 +26,17 @@ Command-line Arguments
 Configurables (defaults shown)
 -----------------------------
 Data Storage Parameters:
-- ROOT_DIR (str): 
+- ROOT_DIR (str): '/projectnb/nphfnirs/s/datasets/BSMW_Laura_Miray_2025/BS_bids_v2'
     - Root directory containing forward model and variance data.
 - EXCLUDED (list[str]): ['sub-577']
     - Subject IDs to skip during processing.
 
 Head Model Parameters:
 - HEAD_MODEL (str): 'ICBM152'
-    - Head model used (options: 'Colin27', 'ICBM152').
+    - Head model used for forward modeling (options: 'Colin27', 'ICBM152').
 
 GLM Parameters:
-- NOISE_MODEL (str): 'ols'
+- NOISE_MODEL (str): 'ar_irls'
     - GLM method used in variance estimation step (options: 'ols', 'ar_irls').
 - TASK (str): 'RS'
     - Task identifier matching the variance estimation dataset.
@@ -56,11 +56,13 @@ Fixed Parameters:
     - Log of sensitivity threshold for creating brain/scalp mask.
 - chromo_list (list[str]): ['HbO', 'HbR']
     - Chromophores to reconstruct and evaluate.
+- lambda_R (float): 1e-6
+    - scaling parameter for the image prior used in reconstruction.
 
 Outputs
 -------
-- Individual pickle file saved to <ROOT_DIR>/derivatives/cedalion/augmented_data/batch_results/
-  with filename: COMPILED_METRIC_RESULTS_{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_sb-{sigma_brain}_ss-{sigma_scalp}_am-{alpha_meas}_as-{alpha_spatial}_{NOISE_MODEL}_dual_wl.pkl
+- Individual pickle file saved to <ROOT_DIR>/derivatives/cedalion/augmented_data/batch_results/dual_wl/
+  with filename: COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_sb-{sigma_brain}_ss-{sigma_scalp}_am-{alpha_meas}_as-{alpha_spatial}_lR-{lambda_R}_{NOISE_MODEL}_dual_wl.pkl
   containing dictionary with metrics:
   - crosstalk_HbOVHbR_direct/indirect: HbO-to-HbR crosstalk ratio
   - crosstalk_HbRVHbO_direct/indirect: HbR-to-HbO crosstalk ratio

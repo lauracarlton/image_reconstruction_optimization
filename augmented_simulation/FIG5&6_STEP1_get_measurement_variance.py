@@ -21,7 +21,7 @@ Inputs
 Configurables (defaults shown)
 -----------------------------
 Data Storage Parameters:
-- ROOT_DIR (str): 
+- ROOT_DIR (str): '/projectnb/nphfnirs/s/datasets/BSMW_Laura_Miray_2025/BS_bids_v2'
     - Root dataset path pointing to BIDS directory containing subject folders.
 - EXCLUDED (list[str]): ['sub-577']
     - Subject IDs to skip during processing.
@@ -49,7 +49,7 @@ HRF Parameters:
     - Parameters for tau and sigma for the modified gamma function for each chromophore.
 
 Preprocessing Parameters:
-- NOISE_MODEL (str): 'ols'  # supported: 'ols', 'ar_irls'
+- NOISE_MODEL (str): 'ar_irls'  # supported: 'ols', 'ar_irls'
     - Noise model type for GLM fitting. Controls preprocessing pipeline.
 - D_RANGE (list[float]): [1e-3, 0.84]
     - Mean signal amplitude minimum and maximum for channel flagging.
@@ -71,9 +71,9 @@ MSE Configuration:
 
 Outputs
 -------
-- Variance estimates (C_meas) saved as gzipped pickle file under
+- Variance estimates (C_meas) saved as pickle file under
   <ROOT_DIR>/derivatives/cedalion/augmented_data/ with filename:
-  C_meas_subj_task-{TASK}_blob-{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_{GLM_METHOD}.pkl
+  C_meas_subj_task-{TASK}_blob-{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_{NOISE_MODEL}.pkl
   Contains measurement variance estimates for use in generating synthetic 
   measurements with realistic noise profiles.
 

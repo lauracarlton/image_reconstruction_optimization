@@ -19,6 +19,9 @@ Inputs
 - single_wl_metrics_batch_aug.py: The worker script to be executed by each batch job.
 - batch_shell_script_single_wl_aug.sh: Shell script template for SGE batch submission.
 
+Note: This script submits jobs with 4 command-line arguments (alpha_meas, alpha_spatial,
+sigma_brain, sigma_scalp) which are passed through the shell script to the Python worker.
+
 Configurables (defaults shown)
 -----------------------------
 Directory Parameters:
@@ -26,10 +29,10 @@ Directory Parameters:
     - Directory containing the batch worker script and shell script.
 
 Image Reconstruction Parameters to Test:
-- alpha_meas_list (list[float]): [10 ** i for i in range(-1, 3)]
-    - Range of measurement regularization parameters to sweep (0.1, 1, 10, 100).
-- alpha_spatial_list (list[float]): [1e-3, 1e-2]
-    - Range of spatial regularization parameters to sweep.
+- alpha_meas_list (list[float]): [10 ** i for i in range(-4, 9)]
+    - Range of measurement regularization parameters to sweep (1e-4 to 1e8).
+- alpha_spatial_list (list[float]): [1e-4, 1e-1, 1e-3, 1e-2]
+    - Range of spatial regularization parameters to sweep (0.0001, 0.001, 0.01, 0.1).
 - sigma_brain_list (list[int]): [0, 1, 3, 5]
     - Range of brain spatial basis function widths to test (mm).
 - sigma_scalp_list (list[int]): [0, 1, 5, 10, 20]
