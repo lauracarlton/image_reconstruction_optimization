@@ -10,25 +10,34 @@
 # ---------------------------------------------------------------------------
 # shell_get_HRF_per_subject.sh
 #
-# Small wrapper script to run the per-subject HRF estimation on the cluster.
-# This script is intended to be submitted via the SGE/qsub scheduler. It
-# activates the conda environment, sets up PYTHONPATH, and calls the
-# per-subject Python runner `estimate_HRF_per_subj.py` with a single
-# subject id (BIDS-style, e.g. `sub-618`).
+# Shell wrapper script to run the per-subject HRF estimation on the cluster
+# for the ball-squeezing fNIRS dataset analysis pipeline.
 #
-# Usage (example):
+# This script is the SGE/qsub wrapper that is submitted by submit_do_hrf_estimation.py.
+# It activates the conda environment, sets up PYTHONPATH, and calls the
+# per-subject Python worker script `estimate_HRF_per_subj.py` with a single
+# subject ID (BIDS-style, e.g. `sub-618`).
+#
+# Usage
+# -----
+# This script is typically called automatically by submit_do_hrf_estimation.py,
+# but can be submitted manually:
 #   qsub shell_get_HRF_per_subject.sh sub-618
 #
-# Expected environment & notes:
-# - Assumes `module` system is available and a conda env named
-#   `cedalion_snakemake` is present. Adjust activation to match your site.
-# - Logs are written to the paths declared below by the SGE directives.
-# - The script expects one positional argument: the subject id.
+# Expected environment
+# --------------------
+# - Assumes `module` system is available and a conda environment named
+#   `cedalion_snakemake` is present.
+# - Logs are written to the output/error directories specified by the SGE directives.
+# - The script expects one positional argument: the subject ID.
 #
-# Outputs:
+# Outputs
+# -------
 # - Stdout/stderr are redirected to the SGE -o/-e paths defined above.
-# - The called Python script will write per-subject pickles under the
-#   project's derivatives/processed_data folder.
+# - The called Python script will write per-subject HRF estimates and preprocessed
+#   data as gzipped pickles under <ROOT_DIR>/derivatives/cedalion/processed_data/<sub>/.
+#
+# Author: Laura Carlton
 # ---------------------------------------------------------------------------
 
 

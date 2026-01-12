@@ -8,10 +8,10 @@ queue used in the imaging paper analysis pipeline.
 
 What it does
 ------------
-- Scans `root_dir` for subject folders (names containing 'sub').
-- Skips any subjects listed in `excluded`.
+- Scans ROOT_DIR for subject folders (names containing 'sub').
+- Skips any subjects listed in EXCLUDED.
 - For each remaining subject it builds a qsub command that calls the
-    project shell script `shell_do_image_recon_on_HRF.sh` with the subject id and
+    project shell script `shell_do_image_recon_on_HRF.sh` with the subject ID and
     submits it using `subprocess.run`.
 
 Usage
@@ -31,9 +31,10 @@ Configurables
 Notes
 -----
 - This script assumes a Sun Grid Engine-style `qsub` command is available on
-    the PATH. If your cluster uses a different scheduler, update `qsub_cmd`
+    the PATH. If your cluster uses a different scheduler, update the qsub_command
     accordingly.
-- The script uses `subprocess.run(..., shell=True)` to run the qsub command
+- The script uses `subprocess.run(..., shell=True)` to run the qsub command.
+- Each submitted job will write output to <ROOT_DIR>/derivatives/cedalion/processed_data/image_space/<sub>/.
 
 Author: Laura Carlton
 """

@@ -30,27 +30,29 @@ Data Storage Parameters:
 
 Head Model Parameters:
 - HEAD_MODEL (str): 'ICBM152'
-    - Head model used for forward modeling.
-- MASK_THRESHOLD (float): -2
-    - Log of sensitivity threshold for creating brain/scalp mask.
+    - Head model used for forward modeling (options: 'Colin27', 'ICBM152').
+
+GLM Parameters:
+- NOISE_MODEL (str): 'ar_irls'
+    - GLM method used in variance estimation step (options: 'ols', 'ar_irls').
+- TASK (str): 'RS'
+    - Task identifier matching the variance estimation dataset.
 
 HRF Parameters:
-- VERTEX_LIST (list[int]): [10089, 10453, 14673, 11323, 13685, 11702, 8337]
-    - List of seed vertex indices for synthetic activation generation.
 - BLOB_SIGMA (pint Quantity): 15 * units.mm
     - Standard deviation of the Gaussian used for spatial activation blob.
 - SCALE_FACTOR (float): 0.02
     - Amplitude of synthetic activation in optical density units.
+- VERTEX_LIST (list[int]): [10089, 10453, 14673, 11323, 13685, 11702, 8337]
+    - List of seed vertex indices for synthetic activation generation.
 
-Wavelength Parameters:
+Fixed Parameters:
 - WL_IDX (int): 1
-    - Wavelength index for single-wavelength simulation (0 or 1, corresponding to 760nm or 850nm).
-
-GLM Parameters:
-- NOISE_MODEL (str): 'ols'
-    - GLM method used in variance estimation step.
-- TASK (str): 'RS'
-    - Task identifier matching the variance estimation dataset.
+    - Wavelength index for single-wavelength simulation (0=760nm, 1=850nm).
+- lambda_R (float): 1e-6
+    - scaling parameter for the image prior used in reconstruction.
+- mask_threshold (float): -2
+    - Log of sensitivity threshold for creating brain/scalp mask.
 
 Image Reconstruction Parameters to Test:
 - alpha_meas_list (list[float]): [1e-4, 1, 1e4]
@@ -95,7 +97,7 @@ import numpy as np
 import xarray as xr
 
 import cedalion.sim.synthetic_hrf as synthetic_hrf
-from cedalion import units, io
+from cedalion import units
 from cedalion.io.forward_model import load_Adot
 
 sys.path.append('/projectnb/nphfnirs/s/users/lcarlton/ANALYSIS_CODE/imaging_paper_figure_code/modules/')
@@ -106,7 +108,7 @@ import get_image_metrics as gim
 warnings.filterwarnings('ignore')
 
 #%% CONFIG 
-ROOT_DIR = os.path.join('/projectnb', 'nphfnirs', 's', 'datasets', 'BSMW_Laura_Miray_2025', 'BS_bids')
+ROOT_DIR = os.path.join('/projectnb', 'nphfnirs', 's', 'datasets', 'BSMW_Laura_Miray_2025', 'BS_bids_v2')
 HEAD_MODEL = 'ICBM152'
 NOISE_MODEL = 'ols'
 TASK = 'RS'
@@ -115,6 +117,8 @@ SCALE_FACTOR = 0.02
 WL_IDX = 1 # use wavelength at index 1 (850 nm according to our dataset)
 VERTEX_LIST = [10089, 10453, 14673, 11323, 13685, 11702, 8337]
 EXCLUDED = ['sub-577']
+MASK_THRESHOLD = -2 # log of sensitivity threshold 
+lambda_R = 1e-6
 
 # IMAGE RECON PARAMS TO TEST 
 alpha_meas_list = [1e-4, 1, 1e4] 
@@ -128,9 +132,6 @@ PROBE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'fw', HEAD_MODEL)
 
 dirs = os.listdir(ROOT_DIR)
 subject_list = [d for d in dirs if 'sub' in d and d not in EXCLUDED]
-
-# HEAD PARAMS
-MASK_THRESHOLD = -2 # log of sensitivity threshold 
 
 #%% LOAD DATA
 head, parcel_dir = irf.load_head_model(HEAD_MODEL, with_parcels=False)
@@ -196,10 +197,11 @@ for sigma_brain in sigma_brain_list:
             H_single_wl = sbf.get_H(G, Adot)
             A_single_wl = H_single_wl.copy()
             nkernels_brain = G_brain.kernel.shape[0]
-            
+            SB=True
         elif sigma_scalp == 0 and sigma_brain ==0:
             G = None
             A_single_wl = Adot.copy()
+            SB=False
             
         else:
             continue
@@ -228,14 +230,22 @@ for sigma_brain in sigma_brain_list:
                         C_meas = C_meas_list.sel(vertex=seed_vertex, subject=subject)
 
                         # get the pseudoinverse
-                        W_indirect, D_indirect, F_indirect = irf.calculate_W(A_single_wl, alpha_meas, alpha_spatial, DIRECT=False,
-                                                     C_meas_flag=True, C_meas=C_meas, D=D_indirect, F=F_indirect)
-                       
+                        W_indirect, D_indirect, F_indirect, max_eig_indirect = irf.calculate_W(A_single_wl, 
+                                                                                lambda_R=lambda_R, 
+                                                                                alpha_meas=alpha_meas, 
+                                                                                alpha_spatial=alpha_spatial, 
+                                                                                DIRECT=False, 
+                                                                                C_meas_flag=True, 
+                                                                                C_meas=C_meas, 
+                                                                                D=D_indirect, 
+                                                                                F=F_indirect, 
+                                                                                max_eig=max_eig_indirect)
                         W_single_wl = W_indirect.isel(wavelength=WL_IDX)
 
                         # get the image of the blob
                         blob_img = synthetic_hrf.build_blob_from_seed_vertex(head, vertex = seed_vertex, scale = BLOB_SIGMA)
                         y =  A_fw[:, A_fw.is_brain.values] @ blob_img 
+                        
                         b = SCALE_FACTOR / y.max()
                         y = y * b 
                         expected_contrast = blob_img * b    
@@ -259,16 +269,17 @@ for sigma_brain in sigma_brain_list:
                                          dims=('vertex'),
                                          coords={'is_brain':('vertex', A_fw.is_brain.values)})
                         
-                        cov_img_tmp = W_single_wl *np.sqrt(C_meas.isel(wavelength=WL_IDX).values) # W is pseudo inverse  --- diagonal (faster than W C W.T)
-                        cov_img_diag = np.nansum(cov_img_tmp**2, axis=1)
-                        
-                        if sigma_brain > 0:
-                            cov_img_diag = sbf.go_from_kernel_space_to_image_space_indirect(cov_img_diag, G)
-           
-                        X_mse = X.copy()
-                        X_mse.values = cov_img_diag
+                        cov_img_diag = irf._get_image_noise_post_indirect(A_single_wl, 
+                                                            W_indirect, 
+                                                            alpha_spatial=alpha_spatial, 
+                                                            lambda_R=lambda_R,
+                                                            SB=SB, 
+                                                            G=G)
+        
+                        X_mse = cov_img_diag.isel(wavelength=WL_IDX)
                         
                         if all_subj_X_hrf_mag is None:
+
                             all_subj_X_hrf_mag = X
                             all_subj_X_hrf_mag = all_subj_X_hrf_mag.assign_coords(subj=subject)
 
@@ -288,7 +299,6 @@ for sigma_brain in sigma_brain_list:
                             X_hrf_mag_weighted = X_hrf_mag_weighted + X_hrf_mag_tmp / X_mse
                             X_mse_inv_weighted = X_mse_inv_weighted + 1 / X_mse  
                             
-                        
                         # END OF SUBJECT LOOP
 
                     # get the average
@@ -344,7 +354,7 @@ RESULTS = {'FWHM': FWHM,
     }
 
 print('saving the data')
-with open(os.path.join(SAVE_DIR, f'COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA.magnitude}mm_scale-{SCALE_FACTOR}_{NOISE_MODEL}_single_wl.pkl'), 'wb') as f:
+with open(os.path.join(SAVE_DIR, f'COMPILED_METRIC_RESULTS_task-{TASK}_blob-{BLOB_SIGMA.magnitude}mm_scale-{SCALE_FACTOR}_lR-{lambda_R}_{NOISE_MODEL}_single_wl.pkl'), 'wb') as f:
     pickle.dump(RESULTS, f)
 
 # %%

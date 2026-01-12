@@ -21,19 +21,21 @@ Usage
 Inputs
 ------
 - Root dataset folder containing per-subject `nirs` subfolders and STEP1
-    outputs located under `<ROOT_DIR>/derivatives/processed_data/<subject>/`.
+    outputs located under `<ROOT_DIR>/derivatives/cedalion/processed_data/<subject>/`.
 - Forward model `Adot.nc` in the PROBE_DIR used for sensitivity and masking.
 
 Configurables (top of file)
 ---------------------------
-- ROOT_DIR (str): '/projectnb/nphfnirs/s/datasets/BSMW_Laura_Miray_2025/BS_bids'
+- ROOT_DIR (str): '/projectnb/nphfnirs/s/datasets/BSMW_Laura_Miray_2025/BS_bids_v2'
         - Path to BIDS-like dataset used by STEP1 outputs and subject SNIRF files.
 - NOISE_MODEL (str): 'ar_irls'
         - Noise-model label used for solving the GLM when reading per-subject STEP1 outputs.
 - REC_STR (str): 'conc_o'
         - Record string pointing to concentration data used by STEP1.
-- - TASK (str): 'BS'
+- TASK (str): 'BS'
     - Task identifier used to build file IDs.
+- PROBE_DIR (str): '<ROOT_DIR>/derivatives/cedalion/fw/probe'
+        - Path to forward model directory containing Adot.nc and optional G matrices.
 - CMEAS_FLAG (bool): True
     - Whether to use measured C_meas when performing image reconstruction.
 - MAG_TS_FLAG (str): 'MAG'  # expected values: 'MAG' or 'TS'
@@ -41,6 +43,10 @@ Configurables (top of file)
             keep time series (TS) when reconstructing.
 - T_WIN (list[int]): [5, 8]
         - Time window (seconds) used for computing magnitude when MAG flag is set.
+- lambda_R (float): 1e-6
+    - regularization parameter used in reconstructions.
+- optional_flag (str): ''
+    - Additional string appended to output filenames (e.g. for noting special cases).
 - cfg_mse (dict): keys for MSE masking and thresholds (see script for defaults).
 - cfg_list (list[dict]): Regularization configurations evaluated (alpha_meas,
     alpha_spatial, DIRECT, SB, sigma_brain, sigma_scalp).
@@ -48,7 +54,7 @@ Configurables (top of file)
 Outputs
 -------
 - For each subject and configuration, a gzipped pickle saved to:
-    `<ROOT_DIR>/derivatives/processed_data/image_space/<subject>/` containing:
+    `<ROOT_DIR>/derivatives/cedalion/processed_data/image_space/<subject>/` containing:
     - 'X_hrf' : reconstructed image(s) (xarray)
     - 'X_mse' : per-image MSE estimates (xarray)
 
@@ -92,7 +98,6 @@ CMEAS_FLAG = True
 MAG_TS_FLAG = "TS" # either TS or MAG
 T_WIN = [5, 8]
 optional_flag = ''
-
 lambda_R = 1e-6
 
 cfg_list = [

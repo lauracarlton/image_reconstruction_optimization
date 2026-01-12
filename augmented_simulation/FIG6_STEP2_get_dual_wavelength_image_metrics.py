@@ -32,29 +32,31 @@ Data Storage Parameters:
 
 Head Model Parameters:
 - HEAD_MODEL (str): 'ICBM152'
-    - Head model used for forward modeling.
-- MASK_THRESHOLD (float): -2
-    - Log of sensitivity threshold for creating brain/scalp mask.
+    - Head model used for forward modeling (options: 'Colin27', 'ICBM152').
+
+GLM Parameters:
+- NOISE_MODEL (str): 'ar_irls'
+    - GLM method used in variance estimation step (options: 'ols', 'ar_irls').
+- TASK (str): 'RS'
+    - Task identifier matching the variance estimation dataset.
 
 HRF Parameters:
-- VERTEX_LIST (list[int]): [10089, 10453, 14673, 11323, 13685, 11702, 8337]
-    - List of seed vertex indices for synthetic activation generation.
 - BLOB_SIGMA (pint Quantity): 15 * units.mm
     - Standard deviation of the Gaussian used for spatial activation blob.
 - SCALE_FACTOR (float): 0.02
     - Amplitude of synthetic activation in optical density units.
+- VERTEX_LIST (list[int]): [10089, 10453, 14673, 11323, 13685, 11702, 8337]
+    - List of seed vertex indices for synthetic activation generation.
 
-GLM Parameters:
-- NOISE_MODEL (str): 'ols'
-    - GLM method used in variance estimation step.
-- TASK (str): 'RS'
-    - Task identifier matching the variance estimation dataset.
-
-Wavelength Parameters:
-- WL_IDX (int): 1
+Fixed Parameters:
+- wl_idx (int): 1
     - Wavelength index used for mask generation.
-- CHROMO_LIST (list[str]): ['HbO', 'HbR']
+- mask_threshold (float): -2
+    - Log of sensitivity threshold for creating brain/scalp mask.
+- chromo_list (list[str]): ['HbO', 'HbR']
     - Chromophores to reconstruct and evaluate.
+- lambda_R (float): 1e-6
+    - scaling parameter for the image prior used in reconstruction.
 
 Image Reconstruction Parameters to Test:
 - alpha_meas_list (list[float]): [1e-4, 1, 1e4]
@@ -118,6 +120,11 @@ BLOB_SIGMA = 15 * units.mm
 SCALE_FACTOR = 0.02
 VERTEX_LIST = [10089, 10453, 14673, 11323, 13685, 11702, 8337]
 EXCLUDED = ['sub-577']
+lambda_R = 1e-6
+
+wl_idx = 1
+mask_threshold = -2
+chromo_list = ['HbO', 'HbR']
 
 # IMAGE RECON PARAMS TO TEST 
 alpha_meas_list = [1e-4, 1, 1e4] 
@@ -130,10 +137,6 @@ SAVE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'augmented_data')
 PROBE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'fw', HEAD_MODEL)
 
 os.makedirs(SAVE_DIR, exist_ok=True)
-
-wl_idx = 1
-mask_threshold = -2
-chromo_list = ['HbO', 'HbR']
 
 dirs = os.listdir(ROOT_DIR)
 subject_list = [d for d in dirs if 'sub' in d and d not in EXCLUDED]
@@ -234,9 +237,11 @@ for sigma_brain in sigma_brain_list:
             A_dual_wl = H_dual_wl.copy()
             nkernels_brain = G_brain.kernel.shape[0]
             nkernels_scalp = G_scalp.kernel.shape[0]
-            
+            SB=True
+
         elif sigma_scalp == 0 and sigma_brain ==0:
             G = None
+            SB=False
             A_single_wl = Adot.copy()
             A_dual_wl = Adot_stacked.copy()
             
@@ -272,12 +277,30 @@ for sigma_brain in sigma_brain_list:
                             C_meas = C_meas_list.sel(vertex=seed_vertex, subject=subject)
                             C_meas_dir = C_meas.stack(measurement=('channel', 'wavelength')).sortby('wavelength')
     
-                            W_direct, D_direct, F_direct = irf.calculate_W(A_dual_wl, alpha_meas, alpha_spatial, DIRECT=True,
-                                                       C_meas_flag=True, C_meas=C_meas_dir, D=D_direct, F=F_direct)
-                            
-                            W_indirect, D_indirect, F_indirect = irf.calculate_W(A_single_wl, alpha_meas, alpha_spatial, DIRECT=False,
-                                                         C_meas_flag=True, C_meas=C_meas, D=D_indirect, F=F_indirect)
-                           
+                            W_direct, D_direct, F_direct, max_eig_direct = irf.calculate_W(A_dual_wl, 
+                                                                        lambda_R=lambda_R, 
+                                                                        alpha_meas=alpha_meas,
+                                                                        alpha_spatial=alpha_spatial, 
+                                                                        DIRECT=True, 
+                                                                        C_meas_flag=True, 
+                                                                        C_meas=C_meas, 
+                                                                        D=D_direct,
+                                                                        F=F_direct, 
+                                                                        max_eig=max_eig_direct)
+            
+        
+                            W_indirect, D_indirect, F_indirect, max_eig_indirect = irf.calculate_W(A_single_wl, 
+                                                                                lambda_R=lambda_R, 
+                                                                                alpha_meas=alpha_meas,
+                                                                                alpha_spatial=alpha_spatial,
+                                                                                DIRECT=False, 
+                                                                                C_meas_flag=True, 
+                                                                                C_meas=C_meas, 
+                                                                                D=D_indirect, 
+                                                                                F=F_indirect, 
+                                                                                max_eig=max_eig_indirect)
+
+
                             # want to use a single point absorber 
                             ground_truth = np.zeros( (nV_brain+nV_scalp) * 2)
                         
@@ -314,11 +337,13 @@ for sigma_brain in sigma_brain_list:
                                                        'is_brain':('vertex', Adot.coords['is_brain'].values)},
                                             )
                         
-                            if sigma_brain > 0:
-                                X_noise_direct = irf.get_image_noise(C_meas_dir, X_direct, W_direct, SB=True, DIRECT=True, G=G)
-                            else:                                    
-                                X_noise_direct = irf.get_image_noise(C_meas_dir, X_direct, W_direct, SB=False, DIRECT=True, G=None)
-                
+                            X_noise_direct = irf.get_image_noise_posterior(A_dual_wl, 
+                                                            W_direct, 
+                                                            alpha_spatial=alpha_spatial, 
+                                                            lambda_R=lambda_R,
+                                                            DIRECT=True, 
+                                                            SB=SB, 
+                                                            G=G)
 
                             ##### INDIRECT METHOD 
                             y_wl0 = y[:n_chs]
@@ -343,11 +368,14 @@ for sigma_brain in sigma_brain_list:
                             # convert to concentraiton 
                             X_indirect = xr.dot(einv, X_od/units.mm, dims=["wavelength"])
                                 
-                            if sigma_brain > 0:
-                                X_noise_indirect = irf.get_image_noise(C_meas_dir, X_indirect, W_indirect, SB=True, DIRECT=False, G=G)
-                            else:
-                                X_noise_indirect = irf.get_image_noise(C_meas_dir, X_indirect, W_indirect, SB=False, DIRECT=False, G=None)
-                                              
+                            X_noise_indirect = irf.get_image_noise_posterior(A_single_wl, 
+                                                            W_indirect, 
+                                                            alpha_spatial=alpha_spatial, 
+                                                            lambda_R=lambda_R,
+                                                            DIRECT=False, 
+                                                            SB=SB, 
+                                                            G=G)
+                                          
                             if all_subj_X_hrf_mag_direct is None:
                                 
                                 all_subj_X_hrf_mag_direct = X_direct

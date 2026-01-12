@@ -14,7 +14,7 @@ This script performs the following high-level steps for a given subject and run:
 - Optional motion correction (TDDR) and optional bandpass filtering.
 - Fit a GLM to estimate the HRF (supports 'ols' and 'ar_irls' noise models).
 - Save per-subject preprocessed results and HRF estimates as gzipped pickles
-  under <ROOT_DIR>/derivatives/processed_data/<sub>.
+  under <ROOT_DIR>/derivatives/cedalion/processed_data/<sub>.
 
 Usage
 -----
@@ -32,16 +32,16 @@ Inputs
 
 Configurables (defaults shown)
 -----------------------------
-- ROOT_DIR (str): '/projectnb/nphfnirs/s/datasets/BSMW_Laura_Miray_2025/BS_bids'
+- ROOT_DIR (str): '/projectnb/nphfnirs/s/datasets/BSMW_Laura_Miray_2025/BS_bids_v2'
     - Root dataset path containing subject folders.
 - RUN_PREPROCESS (bool): True
     - If True, perform preprocessing and save per-subject intermediate results.
     - Else, load previously saved preprocessed data.
 - RUN_HRF_ESTIMATION (bool): True
     - If True, run the GLM-based HRF estimation step.
-- SAVE_RESIDUAL (bool): False
+- SAVE_RESIDUAL (bool): True
     - If True, save GLM residuals per subject.
-- NOISE_MODEL (str): 'ols'  # supported: 'ols', 'ar_irls'
+- NOISE_MODEL (str): 'ar_irls'  # supported: 'ols', 'ar_irls'
     - Noise model used for GLM fitting.
     - Controls whether TDDR/bandpass (ols) or raw concentration (ar_irls) is used.
 - TASK (str): 'BS'
@@ -76,7 +76,7 @@ Outputs
   - 'hrf_per_subj' (xarray): estimated HRF per channel/time/chromophore/trial_type
   - 'hrf_mse_per_subj' (xarray): MSE of HRF estimates
   - 'bad_indices' (np.ndarray): indices of bad channels
-  - saved to <ROOT_DIR>/derivatives/processed_data/<subj>/<subj>_conc_o_hrf_estimates_<NOISE_MODEL>.pkl.gz
+  - saved to <ROOT_DIR>/derivatives/cedalion/processed_data/<subj>/<subj>_task-<TASK>_conc_o_hrf_estimates_<NOISE_MODEL>.pkl.gz
 - Optional GLM residual saved to the subject save directory when
     SAVE_RESIDUAL is True.
 

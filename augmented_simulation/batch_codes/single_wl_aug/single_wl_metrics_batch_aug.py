@@ -89,7 +89,7 @@ import warnings
 import numpy as np 
 import xarray as xr
 
-from cedalion import nirs, io, units, xrutils
+from cedalion import io, units
 import cedalion.sim.synthetic_hrf as synthetic_hrf
 from cedalion.io.forward_model import load_Adot
 
