@@ -181,7 +181,7 @@ X, W, D, F, G, max_eig = irf.do_image_recon(
 7. Convert to concentration
 8. GLM regression to remove systemic signals
 
-### `modules/spatial_basis_funs.py`
+### `modules/spatial_basis_func.py`
 **Purpose**: Spatial basis function generation for regularization
 
 **Key Functions**:
@@ -689,7 +689,8 @@ python FIG8_STEP3_get_group_average.py
 4. Saves group-level images
 
 **Output**:
-- `group_images_direct_sb-{sigma}mm_alpha-{alpha}_smooth-{sigma_smooth}mm.pkl.gz` #FIXME 
+- `group_task-BS_image_hrf_mag_as-{alpha_spatial:.0e}_ls-{lambda_R:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}_smooth-{sigma_smooth}mm.pkl.gz`
+  - Saved to: `<ROOT_DIR>/derivatives/cedalion/processed_data/image_space/group/`
   - Contains: Group mean, standard error, group t-stat
 
 ---
@@ -794,18 +795,22 @@ derivatives/cedalion/augmented_data/
 ```
 derivatives/cedalion/processed_data/
 ├── sub-001/
-│   ├── sub-001_task-BS_preprocessed_results_ols.pkl.gz
-│   ├── sub-001_task-BS_conc_o_hrf_estimates_ols.pkl.gz
-│   └── sub-001_task-BS_glm_residual_ols.pkl  # Optional if SAVE_RESIDUAL=True
+│   ├── sub-001_task-BS_preprocessed_results_ar_irls.pkl  # Gzipped
+│   ├── sub-001_task-BS_conc_o_hrf_estimates_ar_irls.pkl.gz
+│   └── sub-001_task-BS_conc_o_glm_residual_ar_irls.pkl  # Optional if SAVE_RESIDUAL=True
 ├── sub-002/
 │   └── ...
-├── image_space/
-│   ├── sub-001/
-│   │   └── sub-001_task-BS_image_hrf_mag_as-1e-02_ls-1e-06_am-1e+04_sb-1_ss-5_indirect_Cmeas_ar_irls.pkl.gz
-│   ├── sub-002/
-│   │   └── ...
-│   └── group_task-BS_image_hrf_mag_as-1e-02_ls-1e-06_am-1e+04_sb-1_ss-5_indirect_Cmeas_ar_irls.pkl.gz
-```
+└── image_space/
+    ├── sub-001/
+    │   ├── sub-001_task-BS_image_hrf_mag_as-1e-02_ls-1e-06_am-1e+04_sb-1_ss-5_indirect_Cmeas_ar_irls.pkl.gz
+    │   ├── sub-001_task-BS_image_hrf_mag_as-1e-02_ls-1e-06_am-1e+04_sb-1_ss-5_direct_Cmeas_ar_irls.pkl.gz
+    │   └── ...
+    ├── sub-002/
+    │   └── ...
+    └── group/
+        ├── group_task-BS_image_hrf_mag_as-1e-02_ls-1e-06_am-1e+04_sb-1_ss-5_indirect_Cmeas_ar_irls_smooth-80mm.pkl.gz
+        ├── group_task-BS_image_hrf_mag_as-1e-02_ls-1e-06_am-1e+04_sb-1_ss-5_direct_Cmeas_ar_irls_smooth-80mm.pkl.gz
+        └── ...
 ```
 
 ---
