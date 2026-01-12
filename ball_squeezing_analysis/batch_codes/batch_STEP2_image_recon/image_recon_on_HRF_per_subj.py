@@ -26,7 +26,7 @@ Inputs
 
 Configurables (top of file)
 ---------------------------
-- ROOT_DIR (str): '/projectnb/nphfnirs/s/datasets/BSMW_Laura_Miray_2025/BS_bids_v2'
+- ROOT_DIR (str): '.../BS_bids_v2'
         - Path to BIDS-like dataset used by STEP1 outputs and subject SNIRF files.
 - NOISE_MODEL (str): 'ar_irls'
         - Noise-model label used for solving the GLM when reading per-subject STEP1 outputs.
@@ -44,7 +44,7 @@ Configurables (top of file)
 - T_WIN (list[int]): [5, 8]
         - Time window (seconds) used for computing magnitude when MAG flag is set.
 - lambda_R (float): 1e-6
-    - regularization parameter used in reconstructions.
+    - regularization parameter used to scale spatial prior in reconstructions.
 - optional_flag (str): ''
     - Additional string appended to output filenames (e.g. for noting special cases).
 - cfg_mse (dict): keys for MSE masking and thresholds (see script for defaults).
@@ -101,20 +101,20 @@ optional_flag = ''
 lambda_R = 1e-6
 
 cfg_list = [
-    {"alpha_meas": 1e4, "alpha_spatial_depth": 1e-3, "lambda_R": lambda_R, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e4, "alpha_spatial_depth": 1e-3, "lambda_R": lambda_R, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e4, "alpha_spatial_depth": 1e-2, "lambda_R": lambda_R, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e4, "alpha_spatial_depth": 1e-2, "lambda_R": lambda_R, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e4, "alpha_spatial": 1e-3, "lambda_R": lambda_R, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e4, "alpha_spatial": 1e-3, "lambda_R": lambda_R, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e4, "alpha_spatial": 1e-2, "lambda_R": lambda_R, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e4, "alpha_spatial": 1e-2, "lambda_R": lambda_R, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
    
-   {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-3, "lambda_R": lambda_R, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-3, "lambda_R": lambda_R, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-2, "lambda_R": lambda_R, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-2, "lambda_R": lambda_R, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+   {"alpha_meas": 1e2, "alpha_spatial": 1e-3, "lambda_R": lambda_R, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e2, "alpha_spatial": 1e-3, "lambda_R": lambda_R, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e2, "alpha_spatial": 1e-2, "lambda_R": lambda_R, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e2, "alpha_spatial": 1e-2, "lambda_R": lambda_R, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
    
-   {"alpha_meas": 1e0, "alpha_spatial_depth": 1e-3, "lambda_R": lambda_R, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e0, "alpha_spatial_depth": 1e-3, "lambda_R": lambda_R, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e0, "alpha_spatial_depth": 1e-2, "lambda_R": lambda_R, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e0, "alpha_spatial_depth": 1e-2, "lambda_R": lambda_R, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+   {"alpha_meas": 1e0, "alpha_spatial": 1e-3, "lambda_R": lambda_R, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e0, "alpha_spatial": 1e-3, "lambda_R": lambda_R, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e0, "alpha_spatial": 1e-2, "lambda_R": lambda_R, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e0, "alpha_spatial": 1e-2, "lambda_R": lambda_R, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
 ]
 
 
@@ -177,7 +177,7 @@ for cfg in cfg_list:
     sigma_brain = cfg["sigma_brain"]
     sigma_scalp = cfg["sigma_scalp"]
     alpha_meas = cfg["alpha_meas"]
-    alpha_spatial_depth = cfg["alpha_spatial_depth"]
+    alpha_spatial = cfg["alpha_spatial"]
     lambda_R = cfg["lambda_R"]
 
     if os.path.exists(os.path.join(PROBE_DIR, f"G_matrix_sigmabrain-{float(sigma_brain)}.pkl")) and os.path.exists(
@@ -214,7 +214,7 @@ for cfg in cfg_list:
         "sigma_scalp": sigma_scalp * units.mm,
     }
 
-    print(f"alpha_meas = {alpha_meas}, alpha_spatial_depth = {alpha_spatial_depth}, lambda_R = {lambda_R}, SB = {SB}, {direct_name}")
+    print(f"alpha_meas = {alpha_meas}, alpha_spatial = {alpha_spatial}, lambda_R = {lambda_R}, SB = {SB}, {direct_name}")
 
     all_trial_X_hrf = None
     all_trial_X_mse = None
@@ -256,11 +256,11 @@ for cfg in cfg_list:
             Adot=Adot,
             C_meas_flag=CMEAS_FLAG,
             C_meas=C_meas,
-            wavelength=[760, 850],
+            wavelength=Adot.wavelength,
             DIRECT=DIRECT,
             SB=SB,
             cfg_sbf=cfg_sbf,
-            alpha_spatial=alpha_spatial_depth,
+            alpha_spatial=alpha_spatial,
             alpha_meas=alpha_meas,
             lambda_R=lambda_R,
             F=F,
@@ -285,7 +285,6 @@ for cfg in cfg_list:
         else:
             template = X_hrf.isel(time=0).squeeze()
 
-        # X_mse = irf.get_image_noise(C_meas, template, W, DIRECT=DIRECT, SB=SB, G=G)
         if DIRECT:
             Adot_tmp = irf.get_Adot_scaled(Adot, Adot.wavelength)
             if SB:
@@ -298,7 +297,7 @@ for cfg in cfg_list:
 
         X_mse = irf.get_image_noise_posterior(Adot_tmp, 
                                                 W, 
-                                                alpha_spatial=alpha_spatial_depth, 
+                                                alpha_spatial=alpha_spatial, 
                                                 lambda_R=lambda_R,
                                                 DIRECT=DIRECT, 
                                                 SB=SB, 
@@ -339,12 +338,12 @@ for cfg in cfg_list:
     if SB:
         filepath = os.path.join(
             SAVE_DIR,
-            f"{subject}_task-{TASK}_image_hrf_{fname_flag}_as-{alpha_spatial_depth:.0e}_ls-{lambda_R:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}{optional_flag}.pkl.gz",
+            f"{subject}_task-{TASK}_image_hrf_{fname_flag}_as-{alpha_spatial:.0e}_ls-{lambda_R:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}{optional_flag}.pkl.gz",
         )
     else:
         filepath = os.path.join(
             SAVE_DIR,
-            f"{subject}_task-{TASK}_image_hrf_{fname_flag}_as-{alpha_spatial_depth:.0e}_ls-{lambda_R:.0e}_am-{alpha_meas:.0e}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}{optional_flag}.pkl.gz",
+            f"{subject}_task-{TASK}_image_hrf_{fname_flag}_as-{alpha_spatial:.0e}_ls-{lambda_R:.0e}_am-{alpha_meas:.0e}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}{optional_flag}.pkl.gz",
         )
 
     file = gzip.GzipFile(filepath, "wb")

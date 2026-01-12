@@ -94,20 +94,20 @@ Adot = load_Adot(os.path.join(PROBE_DIR, "Adot.nc"))
 lambda_R = 1e-6 
 
 cfg_list = [
-    {"alpha_meas": 1e4, "alpha_spatial_depth": 1e-3, "lambda_spatial_depth": lambda_R, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e4, "alpha_spatial_depth": 1e-3, "lambda_spatial_depth": lambda_R, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e4, "alpha_spatial_depth": 1e-2, "lambda_spatial_depth": lambda_R, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e4, "alpha_spatial_depth": 1e-2, "lambda_spatial_depth": lambda_R, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e4, "alpha_spatial": 1e-3, "lambda_R": lambda_R, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e4, "alpha_spatial": 1e-3, "lambda_R": lambda_R, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e4, "alpha_spatial": 1e-2, "lambda_R": lambda_R, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e4, "alpha_spatial": 1e-2, "lambda_R": lambda_R, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
    
-   {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-3, "lambda_spatial_depth": lambda_R, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-3, "lambda_spatial_depth": lambda_R, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-2, "lambda_spatial_depth": lambda_R, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-2, "lambda_spatial_depth": lambda_R, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+   {"alpha_meas": 1e2, "alpha_spatial": 1e-3, "lambda_R": lambda_R, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e2, "alpha_spatial": 1e-3, "lambda_R": lambda_R, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e2, "alpha_spatial": 1e-2, "lambda_R": lambda_R, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e2, "alpha_spatial": 1e-2, "lambda_R": lambda_R, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
    
-   {"alpha_meas": 1e0, "alpha_spatial_depth": 1e-3, "lambda_spatial_depth": lambda_R, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e0, "alpha_spatial_depth": 1e-3, "lambda_spatial_depth": lambda_R, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e0, "alpha_spatial_depth": 1e-2, "lambda_spatial_depth": lambda_R, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e0, "alpha_spatial_depth": 1e-2, "lambda_spatial_depth": lambda_R, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+   {"alpha_meas": 1e0, "alpha_spatial": 1e-3, "lambda_R": lambda_R, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e0, "alpha_spatial": 1e-3, "lambda_R": lambda_R, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e0, "alpha_spatial": 1e-2, "lambda_R": lambda_R, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e0, "alpha_spatial": 1e-2, "lambda_R": lambda_R, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
 ]
 
 # %% GENERATE THE PLOT
@@ -115,7 +115,6 @@ if PLOT_MASK:
     p0_left = pv.Plotter(shape=(2, 4), window_size=[2000, 700], off_screen=SAVE)
     p0_right = pv.Plotter(shape=(2, 4), window_size=[2000, 700], off_screen=SAVE)
 x_ticks = [0, 5, 10, 15]
-# y_ticks = [0, 2e-6, 4e-6, 6e-6]
 for cc, cfg in enumerate(cfg_list):
 
     DIRECT = cfg["DIRECT"]
@@ -123,8 +122,8 @@ for cc, cfg in enumerate(cfg_list):
     sigma_brain = cfg["sigma_brain"]
     sigma_scalp = cfg["sigma_scalp"]
     alpha_meas = cfg["alpha_meas"]
-    alpha_spatial_depth = cfg["alpha_spatial_depth"]
-    lambda_spatial_depth = cfg["lambda_spatial_depth"]
+    alpha_spatial = cfg["alpha_spatial"]
+    lambda_R = cfg["lambda_R"]
 
     if DIRECT:
         direct_name = "direct"
@@ -136,51 +135,29 @@ for cc, cfg in enumerate(cfg_list):
     else:
         Cmeas_name = "noCmeas"
 
-    # import timeseries
-    # if SB:
-    #     filepath = os.path.join(
-    #         DATA_DIR,
-    #         f"image_hrf_task-{TASK}_ts_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}.pkl.gz",
-    #     )
-    # else:
-    #     filepath = os.path.join(
-    #         DATA_DIR,
-    #         f"image_hrf_task-{TASK}_ts_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}.pkl.gz",
-    #     )
     if SB:
         filepath = os.path.join(
             DATA_DIR,
-            f"task-{TASK}_image_hrf_ts_as-{alpha_spatial_depth:.0e}_ls-{lambda_spatial_depth:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_Cmeas_{NOISE_MODEL}{smoothing_name}{optional_flag}.pkl.gz",
+            f"task-{TASK}_image_hrf_ts_as-{alpha_spatial:.0e}_ls-{lambda_R:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_Cmeas_{NOISE_MODEL}{smoothing_name}{optional_flag}.pkl.gz",
         )
     else:
         filepath = os.path.join(
             DATA_DIR,
-            f"task-{TASK}_image_hrf_ts_as-{alpha_spatial_depth:.0e}_ls-{lambda_spatial_depth:.0e}_am-{alpha_meas:.0e}_{direct_name}_Cmeas_{NOISE_MODEL}{smoothing_name}{optional_flag}.pkl.gz",
+            f"task-{TASK}_image_hrf_ts_as-{alpha_spatial:.0e}_ls-{lambda_R:.0e}_am-{alpha_meas:.0e}_{direct_name}_Cmeas_{NOISE_MODEL}{smoothing_name}{optional_flag}.pkl.gz",
         )
 
     with gzip.open(filepath, "rb") as f:
         ts_results = pickle.load(f)
 
-    # import image magnitude
-    # if SB:
-    #     filepath = os.path.join(
-    #         DATA_DIR,
-    #         f"image_hrf_task-{TASK}_mag_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}.pkl.gz",
-    #     )
-    # else:
-    #     filepath = os.path.join(
-    #         DATA_DIR,
-    #         f"image_hrf_task-{TASK}_mag_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}.pkl.gz",
-    #     )
     if SB:
         filepath = os.path.join(
             DATA_DIR,
-            f"task-{TASK}_image_hrf_mag_as-{alpha_spatial_depth:.0e}_ls-{lambda_spatial_depth:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_Cmeas_{NOISE_MODEL}{smoothing_name}{optional_flag}.pkl.gz",
+            f"task-{TASK}_image_hrf_mag_as-{alpha_spatial:.0e}_ls-{lambda_R:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_Cmeas_{NOISE_MODEL}{smoothing_name}{optional_flag}.pkl.gz",
         )
     else:
         filepath = os.path.join(
             DATA_DIR,
-            f"task-{TASK}_image_hrf_mag_as-{alpha_spatial_depth:.0e}_ls-{lambda_spatial_depth:.0e}_am-{alpha_meas:.0e}_{direct_name}_Cmeas_{NOISE_MODEL}{smoothing_name}{optional_flag}.pkl.gz",
+            f"task-{TASK}_image_hrf_mag_as-{alpha_spatial:.0e}_ls-{lambda_R:.0e}_am-{alpha_meas:.0e}_{direct_name}_Cmeas_{NOISE_MODEL}{smoothing_name}{optional_flag}.pkl.gz",
         )
 
 
@@ -189,9 +166,9 @@ for cc, cfg in enumerate(cfg_list):
         image_results = pickle.load(f)
 
     if SB:
-        title = f"{direct_name},\nsigma_brain-{sigma_brain}, sigma_scalp-{sigma_scalp},\nalpha_meas-{alpha_meas}, alpha_spatial-{alpha_spatial_depth}"
+        title = f"{direct_name},\nsigma_brain-{sigma_brain}, sigma_scalp-{sigma_scalp},\nalpha_meas-{alpha_meas}, alpha_spatial-{alpha_spatial}"
     else:
-        title = f"{direct_name},\nalpha_meas-{alpha_meas}, alpha_spatial-{alpha_spatial_depth}"
+        title = f"{direct_name},\nalpha_meas-{alpha_meas}, alpha_spatial-{alpha_spatial}"
 
     # plot the timeseries based on an ROI selection
     mag = image_results["X_hrf_ts_weighted"]
@@ -389,12 +366,12 @@ for cc, cfg in enumerate(cfg_list):
         if SB:
             filepath = os.path.join(
                 SAVE_DIR,
-                f"task-{TASK}_ts_plot_as-{alpha_spatial_depth:.0e}_ls-{lambda_spatial_depth:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_{Cmeas_name}_{trial_type.values}_roi-{ROI_SELECTION}_{NOISE_MODEL}.png",
+                f"task-{TASK}_ts_plot_as-{alpha_spatial:.0e}_ls-{lambda_R:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_{Cmeas_name}_{trial_type.values}_roi-{ROI_SELECTION}_{NOISE_MODEL}.png",
             )
         else:
             filepath = os.path.join(
                 SAVE_DIR,
-                f"task-{TASK}_ts_plot_as-{alpha_spatial_depth:.0e}_ls-{lambda_spatial_depth:.0e}_am-{alpha_meas:.0e}_{direct_name}_{Cmeas_name}_{trial_type.values}_roi-{ROI_SELECTION}_{NOISE_MODEL}.png",
+                f"task-{TASK}_ts_plot_as-{alpha_spatial:.0e}_ls-{lambda_R:.0e}_am-{alpha_meas:.0e}_{direct_name}_{Cmeas_name}_{trial_type.values}_roi-{ROI_SELECTION}_{NOISE_MODEL}.png",
             )
 
         plt.savefig(filepath, dpi=300)

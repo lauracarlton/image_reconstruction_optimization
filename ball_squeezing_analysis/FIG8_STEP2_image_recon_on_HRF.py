@@ -34,7 +34,7 @@ Inputs
 
 Configurables (defaults shown)
 -----------------------------
-- ROOT_DIR (str): '/projectnb/nphfnirs/s/datasets/BSMW_Laura_Miray_2025/BS_bids'
+- ROOT_DIR (str): '.../BS_bids'
         - Path to BIDS-like dataset used by STEP1 outputs and subject SNIRF files.
 - NOISE_MODEL (str): 'ar_irls'
         - Noise-model label used for solving the GLM when reading per-subject STEP1 outputs.
@@ -51,6 +51,10 @@ Configurables (defaults shown)
         - Time window (seconds) used for computing magnitude when MAG flag is set.
 - HEAD_MODEL (str): 'ICBM152'
     - head model used for generating sensitivity profile 
+- lambda_R (float): 1e-6
+    - regularization parameter used to scale spatial prior in reconstructions.
+- optional_flag (str): ''
+    - Additional string appended to output filenames (e.g. for noting special cases).
 - EXCLUDED (list): list of subjects to be exluded from analysis
 - cfg_mse (dict): keys for MSE masking and thresholds (see script for defaults).
 - cfg_list (list[dict]): Regularization configurations evaluated (alpha_meas,
@@ -85,7 +89,7 @@ from cedalion.io.forward_model import load_Adot
 
 # import my own functions from a different directorys
 sys.path.append("/projectnb/nphfnirs/s/users/lcarlton/ANALYSIS_CODE/imaging_paper_figure_code/modules/")
-import image_recon_func as irf  # noqa: E402
+import image_recon_func as irf  
 
 # Turn off all warnings
 warnings.filterwarnings("ignore")
@@ -100,14 +104,14 @@ MAG_TS_FLAG = "MAG"  # expected values: 'MAG' or 'TS' (case-sensitive in downstr
 T_WIN = [5, 8]
 HEAD_MODEL = 'ICBM152'
 EXCLUDED = []
-lambda_spatial_direct = 1e-6
-lambda_spatial_indirect = lambda_spatial_direct * 1.6e-9
+lambda_R = 1e-6
+optional_flag = ''
 
 cfg_list = [
-    {"alpha_meas": 1e1, "alpha_spatial": 1e-3, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e1, "alpha_spatial": 1e-3, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e1, "alpha_spatial": 1e-2, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e1, "alpha_spatial": 1e-2, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e1, "alpha_spatial": 1e-3, "lambda_R": lambda_R, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e1, "alpha_spatial": 1e-3, "lambda_R": lambda_R, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e1, "alpha_spatial": 1e-2, "lambda_R": lambda_R, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e1, "alpha_spatial": 1e-2, "lambda_R": lambda_R, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
 ]
 
 cfg_mse = {"mse_val_for_bad_data": 1e1, "mse_amp_thresh": 1e-3 * units.V, "blockaverage_val": 0, "mse_min_thresh": 1e-6}
@@ -133,6 +137,7 @@ do the image reconstruction of each subject independently
 for cfg in cfg_list:
     F = None
     D = None
+    max_eig = None
 
     DIRECT = cfg["DIRECT"]
     SB = cfg["SB"]
@@ -141,6 +146,7 @@ for cfg in cfg_list:
     sigma_scalp = cfg["sigma_scalp"]
     alpha_meas = cfg["alpha_meas"]
     alpha_spatial = cfg["alpha_spatial"]
+    lambda_R = cfg["lambda_R"]
 
     if os.path.exists(PROBE_DIR + f"G_matrix_sigmabrain-{float(sigma_brain)}.pkl") and os.path.exists(
         PROBE_DIR + f"G_matrix_sigmascalp-{float(sigma_scalp)}.pkl"):
@@ -241,23 +247,24 @@ for cfg in cfg_list:
             C_meas = od_mse_mag.pint.dequantify()
             C_meas = C_meas.stack(measurement=("channel", "wavelength")).sortby("wavelength")
 
-            X_hrf, W, D, F, G = irf.do_image_recon(
-                od_hrf,
-                head=head,
-                Adot=Adot,
-                C_meas_flag=CMEAS_FLAG,
-                C_meas=C_meas,
-                wavelength=Adot.wavelength,
-                BRAIN_ONLY=False,
-                DIRECT=DIRECT,
-                SB=SB,
-                cfg_sbf=cfg_sbf,
-                alpha_spatial=alpha_spatial,
-                alpha_meas=alpha_meas,
-                F=F,
-                D=D,
-                G=G,
-            )
+            X_hrf, W, D, F, G, max_eig = irf.do_image_recon(
+                                        od_hrf,
+                                        head=head,
+                                        Adot=Adot,
+                                        C_meas_flag=CMEAS_FLAG,
+                                        C_meas=C_meas,
+                                        wavelength=Adot.wavelength,
+                                        DIRECT=DIRECT,
+                                        SB=SB,
+                                        cfg_sbf=cfg_sbf,
+                                        alpha_spatial=alpha_spatial,
+                                        alpha_meas=alpha_meas,
+                                        lambda_R=lambda_R,
+                                        F=F,
+                                        D=D,
+                                        G=G,
+                                        max_eig=max_eig
+                                    )
 
             if SB and not G_EXISTS:
                 with open(os.path.join(PROBE_DIR, f"G_matrix_sigmabrain-{float(sigma_brain)}.pkl"), "wb") as f:
@@ -275,8 +282,13 @@ for cfg in cfg_list:
             else:
                 template = X_hrf.isel(time=0).squeeze()
 
-            X_mse = irf.get_image_noise(C_meas, template, W, DIRECT=DIRECT, SB=SB, G=G)
-
+            X_mse = irf.get_image_noise_posterior(Adot, 
+                                                W, 
+                                                alpha_spatial=alpha_spatial, 
+                                                lambda_R=lambda_R,
+                                                DIRECT=DIRECT, 
+                                                SB=SB, 
+                                                G=G)
             if all_trial_X_hrf is None:
 
                 all_trial_X_hrf = X_hrf
@@ -300,12 +312,12 @@ for cfg in cfg_list:
         if SB:
             filepath = os.path.join(
                 SAVE_DIR,
-                f"{subject}_task-{TASK}_image_hrf_{fname_flag}_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}.pkl.gz",
+                f"{subject}_task-{TASK}_image_hrf_{fname_flag}_as-{alpha_spatial:.0e}_ls-{lambda_R:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}{optional_flag}.pkl.gz",
             )
         else:
             filepath = os.path.join(
                 SAVE_DIR,
-                f"{subject}_task-{TASK}_image_hrf_{fname_flag}_as-{alpha_spatial:.0e}_am-{alpha_meas:.0e}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}.pkl.gz",
+                f"{subject}_task-{TASK}_image_hrf_{fname_flag}_as-{alpha_spatial:.0e}_ls-{lambda_R:.0e}_am-{alpha_meas:.0e}_{direct_name}_{Cmeas_name}_{NOISE_MODEL}{optional_flag}.pkl.gz",
             )
 
         file = gzip.GzipFile(filepath, "wb")

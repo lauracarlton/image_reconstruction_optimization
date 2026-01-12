@@ -92,20 +92,20 @@ FLAG_CONDITION_LIST = ["right", "left"]
 lambda_R = 1e-6 
 
 cfg_list = [
-  {"alpha_meas": 1e4, "alpha_spatial_depth": 1e-3, "lambda_spatial_depth": lambda_R, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e4, "alpha_spatial_depth": 1e-3, "lambda_spatial_depth": lambda_R, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e4, "alpha_spatial_depth": 1e-2, "lambda_spatial_depth": lambda_R, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e4, "alpha_spatial_depth": 1e-2, "lambda_spatial_depth": lambda_R, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+  {"alpha_meas": 1e4, "alpha_spatial": 1e-3, "lambda_R": lambda_R, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e4, "alpha_spatial": 1e-3, "lambda_R": lambda_R, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e4, "alpha_spatial": 1e-2, "lambda_R": lambda_R, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e4, "alpha_spatial": 1e-2, "lambda_R": lambda_R, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
    
-   {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-3, "lambda_spatial_depth": lambda_R, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-3, "lambda_spatial_depth": lambda_R, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-2, "lambda_spatial_depth": lambda_R, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e2, "alpha_spatial_depth": 1e-2, "lambda_spatial_depth": lambda_R, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+   {"alpha_meas": 1e2, "alpha_spatial": 1e-3, "lambda_R": lambda_R, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e2, "alpha_spatial": 1e-3, "lambda_R": lambda_R, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e2, "alpha_spatial": 1e-2, "lambda_R": lambda_R, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e2, "alpha_spatial": 1e-2, "lambda_R": lambda_R, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
    
-   {"alpha_meas": 1e0, "alpha_spatial_depth": 1e-3, "lambda_spatial_depth": lambda_R, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e0, "alpha_spatial_depth": 1e-3, "lambda_spatial_depth": lambda_R, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e0, "alpha_spatial_depth": 1e-2, "lambda_spatial_depth": lambda_R, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e0, "alpha_spatial_depth": 1e-2, "lambda_spatial_depth": lambda_R, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+   {"alpha_meas": 1e0, "alpha_spatial": 1e-3, "lambda_R": lambda_R, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e0, "alpha_spatial": 1e-3, "lambda_R": lambda_R, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e0, "alpha_spatial": 1e-2, "lambda_R": lambda_R, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e0, "alpha_spatial": 1e-2, "lambda_R": lambda_R, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
 ]
 
 if SPATIAL_SMOOTHING:
@@ -144,8 +144,8 @@ for cfg in cfg_list:
     sigma_brain = cfg["sigma_brain"]
     sigma_scalp = cfg["sigma_scalp"]
     alpha_meas = cfg["alpha_meas"]
-    alpha_spatial_depth = cfg["alpha_spatial_depth"]
-    lambda_spatial_depth = cfg["lambda_spatial_depth"]
+    alpha_spatial = cfg["alpha_spatial"]
+    lambda_R = cfg["lambda_R"]
 
     if DIRECT:
         direct_name = "direct"
@@ -170,12 +170,12 @@ for cfg in cfg_list:
     if SB:
         filepath = os.path.join(
             DATA_DIR,
-            f"task-{TASK}_image_hrf_{FNAME_FLAG}_as-{alpha_spatial_depth:.0e}_ls-{lambda_spatial_depth:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_Cmeas_{NOISE_MODEL}{smoothing_name}{optional_flag}.pkl.gz",
+            f"task-{TASK}_image_hrf_{FNAME_FLAG}_as-{alpha_spatial:.0e}_ls-{lambda_R:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_Cmeas_{NOISE_MODEL}{smoothing_name}{optional_flag}.pkl.gz",
         )
     else:
         filepath = os.path.join(
             DATA_DIR,
-            f"task-{TASK}_image_hrf_{FNAME_FLAG}_as-{alpha_spatial_depth:.0e}_ls-{lambda_spatial_depth:.0e}_am-{alpha_meas:.0e}_{direct_name}_Cmeas_{NOISE_MODEL}{smoothing_name}{optional_flag}.pkl.gz",
+            f"task-{TASK}_image_hrf_{FNAME_FLAG}_as-{alpha_spatial:.0e}_ls-{lambda_R:.0e}_am-{alpha_meas:.0e}_{direct_name}_Cmeas_{NOISE_MODEL}{smoothing_name}{optional_flag}.pkl.gz",
         )
 
 
@@ -252,7 +252,7 @@ for cfg in cfg_list:
                         foo_img = foo_img.sel(chromo="HbR")
                         chromo = "HbR"
 
-                    title_str += f' lambda_spatial_depth = {lambda_spatial_depth:0.1e}'
+                    title_str += f' lambda_R = {lambda_R:0.1e}'
                     p.subplot(0, 0)
                     p.add_mesh(
                         surf,
@@ -268,9 +268,9 @@ for cfg in cfg_list:
 
                     if PLOT_SAVE:
                         if SB:
-                            img_folder = f"images_as-{alpha_spatial_depth:.0e}_ls-{lambda_spatial_depth:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_{Cmeas_name}"
+                            img_folder = f"images_as-{alpha_spatial:.0e}_ls-{lambda_R:.0e}_am-{alpha_meas:.0e}_sb-{sigma_brain}_ss-{sigma_scalp}_{direct_name}_{Cmeas_name}"
                         else:
-                            img_folder = f"images_as-{alpha_spatial_depth:.0e}_ls-{lambda_spatial_depth:.0e}_am-{alpha_meas:.0e}_{direct_name}_{Cmeas_name}"
+                            img_folder = f"images_as-{alpha_spatial:.0e}_ls-{lambda_R:.0e}_am-{alpha_meas:.0e}_{direct_name}_{Cmeas_name}"
 
                         save_dir_tmp = os.path.join(SAVE_DIR, img_folder)
                         if not os.path.exists(save_dir_tmp):

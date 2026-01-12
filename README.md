@@ -12,9 +12,10 @@ This repository provides tools to optimize surface-based image reconstruction fo
 If you use this code, please cite:
 
 ```
-[PAPER CITATION HERE]
+L. Carlton et al., “Surface-Based Image Reconstruction Optimization for High-Density Functional Near Infrared Spectroscopy,” Neurophotonics, vol. (in review), 2026.
 ```
 ---
+
 ## Table of Contents
 
 - [Requirements](#requirements)
@@ -89,7 +90,7 @@ image_reconstruction_optimization/
 ├── modules/                           # Core analysis modules
 │   ├── image_recon_func.py           # Image reconstruction functions
 │   ├── processing_func.py            # Preprocessing and GLM
-│   ├── spatial_basis_funs.py         # Spatial basis function generation
+│   ├── spatial_basis_func.py         # Spatial basis function generation
 │   └── get_image_metrics.py          # Image quality metrics
 ├── augmented_simulation/              # Pipeline 1: Parameter optimization
 │   ├── STEP0_seed_vertex_selection.py
@@ -99,8 +100,9 @@ image_reconstruction_optimization/
 │   ├── FIG5_generate_figure.py
 │   ├── FIG6_generate_figure.py
 │   └── batch_codes/                   # Batch processing scripts
-│       ├── single_wl_aug/
-│       └── dual_wl_aug/
+│       ├── augmentation/              # STEP1 measurement variance batch jobs
+│       ├── single_wl_aug/             # STEP2A single-wavelength batch jobs
+│       └── dual_wl_aug/               # STEP2B dual-wavelength batch jobs
 └── ball_squeezing_analysis/           # Pipeline 2: Real data validation
     ├── FIG8_STEP1_hrf_estimation.py
     ├── FIG8_STEP2_image_recon_on_HRF.py
@@ -120,30 +122,37 @@ image_reconstruction_optimization/
 **Purpose**: Core image reconstruction functionality
 
 **Key Functions**:
-- `load_head_model(head_model='ICBM152')`: Load anatomical head model
-- `load_probe(probe_path)`: Load probe geometry and forward model
-- `get_Adot_scaled(Adot, wavelengths)`: Create stacked sensitivity matrix for dual-wavelength
-- `calculate_W(A, alpha_meas, alpha_spatial)`: Compute reconstruction matrix with regularization
+- `load_head_model(head_model='ICBM152', with_parcels=True)`: Load anatomical head model with optional parcellation
+- `load_probe(probe_path, snirf_name, head_model)`: Load probe geometry and forward model
+- `compute_lambda_R_indirect(Adot, lambda_R, alpha_spatial, wavelengths)`: Compute wavelength-specific prior scaling for indirect reconstruction
+- `get_Adot_scaled(Adot, wavelengths)`: Create stacked sensitivity matrix for dual-wavelength direct reconstruction
+- `calculate_W(A, lambda_R, alpha_meas, alpha_spatial, ...)`: Compute reconstruction matrix with regularization
 - `do_image_recon(od, head, Adot, ...)`: Main image reconstruction function
-- `get_image_noise(C_meas, X, W)`: Estimate image-space noise from measurement covariance
+- `get_image_noise_posterior(Adot, W, alpha_spatial, lambda_R, ...)`: Estimate posterior variance of reconstructed images
+- `get_probe_aligned(head, geo3d)`: Align probe coordinates to head model coordinate system
 
 **Usage Example**:
 ```python
 import image_recon_func as irf
 
 # Load head model and probe
-head, _ = irf.load_head_model('ICBM152')
-Adot, meas_list, geo3d, amp = irf.load_probe(probe_path)
+head, PARCEL_DIR = irf.load_head_model('ICBM152', with_parcels=True)
+Adot, meas_list, geo3d, amp = irf.load_probe(
+    probe_path, 
+    snirf_name='fullhead_56x144_System2.snirf',
+    head_model='ICBM152'
+)
 
 # Perform image reconstruction
-X, W, D, F, G = irf.do_image_recon(
+X, W, D, F, G, max_eig = irf.do_image_recon(
     od=od_data,
     head=head,
     Adot=Adot,
     wavelength=[690, 850],
-    alpha_meas=0.1,
-    alpha_spatial=0.01,
-    DIRECT=True,  # True for dual-wavelength, False for single
+    alpha_meas=1e4,
+    alpha_spatial=1e-2,
+    lambda_R=1e-6,
+    DIRECT=True,  # True for dual-wavelength direct, False for indirect
     SB=True,      # Use spatial basis functions
     cfg_sbf=cfg_sbf
 )
@@ -154,8 +163,13 @@ X, W, D, F, G = irf.do_image_recon(
 
 **Key Functions**:
 - `prune_channels(rec, amp_thresh, sd_thresh, snr_thresh)`: Quality control for channels
-- `GLM(runs, cfg_GLM, ...)`: General Linear Model for HRF estimation
-- `get_spatial_smoothing_kernel(V_ras, sigma_mm)`: Spatial smoothing for HRF
+- `median_filter(rec, median_filt)`: Apply median filter to remove spike artifacts
+- `GLM(runs, cfg_GLM, geo3d, pruned_chans_list, stim_list)`: General Linear Model for HRF estimation
+- `get_drift_regressors(runs, cfg_GLM)`: Generate polynomial drift regressors
+- `get_drift_legendre_regressors(runs, cfg_GLM)`: Generate Legendre polynomial drift regressors
+- `get_short_regressors(runs, pruned_chans_list, geo3d, cfg_GLM)`: Generate short-separation channel regressors
+- `concatenate_runs(runs, stim)`: Concatenate multiple runs for combined GLM analysis
+- `get_spatial_smoothing_kernel(V_ras, sigma_mm)`: Generate spatial smoothing kernel for cortical surface
 
 **Preprocessing Pipeline**:
 1. Replace invalid/zero values
@@ -171,15 +185,18 @@ X, W, D, F, G = irf.do_image_recon(
 **Purpose**: Spatial basis function generation for regularization
 
 **Key Functions**:
-- `get_sensitivity_mask(sensitivity, threshold)`: Identify sensitive vertices
-- `downsample_mesh(mesh, mask, threshold)`: Create basis function centers
-- `get_kernel_matrix(mesh_downsampled, mesh, sigma)`: Generate Gaussian kernels
-- `get_G_matrix(head, M, threshold_brain, sigma_brain, ...)`: Build full spatial basis
-- `get_H_stacked(G, A)`: Transform sensitivity matrix to kernel space
+- `get_sensitivity_mask(sensitivity, threshold, wavelength_idx)`: Identify sensitive vertices from forward model
+- `downsample_mesh(mesh, mask, threshold)`: Create downsampled mesh for basis function centers
+- `get_kernel_matrix(mesh_downsampled, mesh, sigma)`: Generate Gaussian kernel matrix
+- `get_G_matrix(head, M, threshold_brain, sigma_brain, threshold_scalp, sigma_scalp)`: Build full spatial basis for brain and scalp
+- `get_H(G, A)`: Transform forward model to kernel space (indirect method)
+- `get_H_stacked(G, A)`: Transform stacked forward model to kernel space (direct method)
+- `go_from_kernel_space_to_image_space_direct(X, G)`: Transform reconstructed kernel weights back to vertex space (direct)
+- `go_from_kernel_space_to_image_space_indirect(X, G)`: Transform reconstructed kernel weights back to vertex space (indirect)
 
 **Usage Example**:
 ```python
-import spatial_basis_funs as sbf
+import spatial_basis_func as sbf
 
 # Create spatial basis
 M = sbf.get_sensitivity_mask(Adot, threshold=-2, wavelength_idx=1)
@@ -188,8 +205,8 @@ G = sbf.get_G_matrix(
     M,
     threshold_brain=1*units.mm,
     threshold_scalp=5*units.mm,
-    sigma_brain=3*units.mm,
-    sigma_scalp=10*units.mm
+    sigma_brain=1*units.mm,
+    sigma_scalp=5*units.mm
 )
 
 # Transform forward model
@@ -200,11 +217,16 @@ H = sbf.get_H_stacked(G, Adot_stacked)
 **Purpose**: Quantitative image quality assessment
 
 **Key Metrics**:
-- `get_FWHM(image, head)`: Full-width at half-maximum (spatial resolution)
-- `get_localization_error(origin, image, head)`: Distance from true source
-- `get_crosstalk(image_brain, image_scalp)`: Brain-scalp signal separation
-- `get_CNR(image, y, W)`: Contrast-to-noise ratio
-- `get_ROI(head, ROI)`: Extent of activation
+- `get_ROI(image, threshold)`: Identify region of interest above threshold
+- `get_ROI_contig(image, head, threshold)`: Get largest contiguous activation region
+- `get_image_centroid(image, ROI, head)`: Compute centroid of activation
+- `get_FWHM(image, head, ROI_threshold, version)`: Full-width at half-maximum (spatial resolution)
+- `get_localization_error(origin, image, head, ROI_threshold)`: Distance from true source to reconstructed centroid
+- `get_crosstalk(image_brain, image_scalp, ROI_threshold)`: Brain-scalp signal separation
+- `get_CNR(image, y, W, n_brain, head, ...)`: Contrast-to-noise ratio
+- `get_CNR_v2(image, image_cov)`: CNR computed from posterior variance
+- `get_ROI_volume(head, ROI)`: Volume of activation region
+- `get_ROI_surface_area(head, ROI, min_vertices_in_face)`: Surface area of activation region
 
 ---
 
@@ -225,9 +247,10 @@ your_dataset/
 │   └── nirs/
 │       └── ...
 └── derivatives/
-    └── fw/
-        └── ICBM152/
-            └── Adot.nc  # Forward model
+    └── cedalion/
+        └── fw/
+            └── ICBM152/
+                └── Adot.nc  # Forward model
 ```
 
 **Step 3**: Choose your pipeline:
@@ -258,7 +281,7 @@ If using a head model different from the Cedalion ICBM152 implementation then th
 **Configuration**:
 ```python
 ROOT_DIR = '/path/to/your/dataset'
-PROBE_PATH = os.path.join(ROOT_DIR, 'derivatives', 'fw')
+PROBE_PATH = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'fw')
 ```
 
 **Run**:
@@ -413,7 +436,44 @@ python FIG6_generate_figure.py
 
 For large parameter sweeps, use batch submission to parallelize computations.
 
-#### Single-Wavelength Batch Processing
+#### STEP 1 Batch (Measurement Variance Estimation)
+
+**Location**: `augmented_simulation/batch_codes/augmentation/`
+
+**Files**:
+- `STEP1_submit_get_measurement_variance.py`: Submission script
+- `get_measurement_variance_per_subject.py`: Worker script (per-subject processing)
+- `batch_shell_script_augment_data.sh`: Shell wrapper
+- `compile_measurement_variance_across_subjects.py`: Compilation script
+
+**Setup**:
+1. Edit `STEP1_submit_get_measurement_variance.py`:
+```python
+CODE_DIR = '/path/to/batch_codes/augmentation'
+ROOT_DIR = '/path/to/BIDS/dataset'
+EXCLUDED = ['sub-577']  # Subjects to skip
+```
+
+2. Submit jobs:
+```bash
+python STEP1_submit_get_measurement_variance.py
+```
+
+3. Monitor job status:
+```bash
+qstat  # Check running jobs
+```
+
+4. Compile results after all jobs complete:
+```bash
+python compile_measurement_variance_across_subjects.py
+```
+
+**Output**: `C_meas_subj_task-RS_blob-15mm_scale-0.02_ols.pkl` containing combined measurement variance from all subjects
+
+---
+
+#### Single-Wavelength Batch Processing (STEP 2A)
 
 **Location**: `augmented_simulation/batch_codes/single_wl_aug/`
 
@@ -452,7 +512,9 @@ python STEP3_compile_results_single_wl.py
 
 **Output**: Combined results file with all parameter combinations (same path as when using the script)
 
-#### Dual-Wavelength Batch Processing
+---
+
+#### Dual-Wavelength Batch Processing (STEP 2B)
 
 **Location**: `augmented_simulation/batch_codes/dual_wl_aug/`
 
@@ -553,7 +615,7 @@ python FIG8_STEP1_hrf_estimation.py
 4. **GLM**: Estimates HRF for each channel/chromophore
 5. **Save Results**: HRF estimates and measurement covariance per subject
 
-**Output Files** (per subject):
+**Output Files** (per subject, saved to `<ROOT_DIR>/derivatives/cedalion/processed_data/<subject>/`):
 - `<subject>_task-BS_preprocessed_results_ols.pkl.gz`
   - Contains: `all_runs`, `chs_pruned`, `all_stims`, `geo3d`
 - `<subject>_task-BS_conc_o_hrf_estimates_ols.pkl.gz`
@@ -571,10 +633,10 @@ Reconstruct cortical images from estimated HRFs.
 **Configuration**:
 ```python
 cfg_list = [
-    {"alpha_meas": 1e4, "alpha_spatial": 1e-3, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e2, "alpha_spatial": 1e-3, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e4, "alpha_spatial": 1e-2, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e2, "alpha_spatial": 1e-2, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e4, "alpha_spatial": 1e-3, "lambda_R": 1e-6, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e2, "alpha_spatial": 1e-3, "lambda_R": 1e-6, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e4, "alpha_spatial": 1e-2, "lambda_R": 1e-6, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e2, "alpha_spatial": 1e-2, "lambda_R": 1e-6, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
 ]
 
 # Time window for averaging to get magnitude images 
@@ -595,7 +657,7 @@ python FIG8_STEP2_image_recon_on_HRF.py
 5. Reconstructs image for each subject/trial_type
 6. Saves full time-course or magnitude images
 
-**Output Files** (per subject):
+**Output Files** (per subject, saved to `<ROOT_DIR>/derivatives/cedalion/processed_data/image_space/<subject>/`):
 - `<subject>_task-BS_images_direct_sb-{sigma}mm_alpha-{alpha}.pkl.gz`
   - Contains: Image time-courses (vertex × time × chromo × trial_type)
 
@@ -627,7 +689,7 @@ python FIG8_STEP3_get_group_average.py
 4. Saves group-level images
 
 **Output**:
-- `group_images_direct_sb-{sigma}mm_alpha-{alpha}_smooth-{sigma_smooth}mm.pkl.gz`
+- `group_images_direct_sb-{sigma}mm_alpha-{alpha}_smooth-{sigma_smooth}mm.pkl.gz` #FIXME 
   - Contains: Group mean, standard error, group t-stat
 
 ---
@@ -689,6 +751,7 @@ python submit_do_image_recon_on_HRF.py
 | `alpha_spatial` | α_spatial | 0 to 1 | Spatial regularization. Higher = smoother spatial patterns |
 | `sigma_brain` | σ_brain | 0-5 mm | Brain spatial basis width. 0 = no basis, higher = smoother |
 | `sigma_scalp` | σ_scalp | 0-20 mm | Scalp spatial basis width. Typically larger than brain |
+| `lambda_R` | λ_R | 1e-6 | Scaling parameter placed on image prior, R |
 
 ### Preprocessing Parameters
 
@@ -731,13 +794,18 @@ derivatives/cedalion/augmented_data/
 ```
 derivatives/cedalion/processed_data/
 ├── sub-001/
-│   ├── sub-001_task-BS_preprocessed_results_ols.pkl
+│   ├── sub-001_task-BS_preprocessed_results_ols.pkl.gz
 │   ├── sub-001_task-BS_conc_o_hrf_estimates_ols.pkl.gz
-│   └── sub-001_task-BS_image_hrf_mag_as-0.01_am-0.1_sb-1_ss-5_indirect_Cmeas_ols.pkl.gz,
-
+│   └── sub-001_task-BS_glm_residual_ols.pkl  # Optional if SAVE_RESIDUAL=True
 ├── sub-002/
 │   └── ...
-└── task-BS_image_hrf_mag_as-0.01_am-0.1_sb-1_ss-5_indirect_Cmeas_ols.pkl.gz"
+├── image_space/
+│   ├── sub-001/
+│   │   └── sub-001_task-BS_image_hrf_mag_as-1e-02_ls-1e-06_am-1e+04_sb-1_ss-5_indirect_Cmeas_ar_irls.pkl.gz
+│   ├── sub-002/
+│   │   └── ...
+│   └── group_task-BS_image_hrf_mag_as-1e-02_ls-1e-06_am-1e+04_sb-1_ss-5_indirect_Cmeas_ar_irls.pkl.gz
+```
 ```
 
 ---
