@@ -104,11 +104,11 @@ image_reconstruction_optimization/
 │       ├── single_wl_aug/             # STEP2A single-wavelength batch jobs
 │       └── dual_wl_aug/               # STEP2B dual-wavelength batch jobs
 └── ball_squeezing_analysis/           # Pipeline 2: Real data validation
-    ├── FIG8_STEP1_hrf_estimation.py
-    ├── FIG8_STEP2_image_recon_on_HRF.py
-    ├── FIG8_STEP3_get_group_average.py
-    ├── FIG8_ballsqueezing_images.py
-    ├── FIG8_ballsqueezing_timeseries_plot.py
+    ├── FIG7_STEP1_hrf_estimation.py
+    ├── FIG7_STEP2_image_recon_on_HRF.py
+    ├── FIG7_STEP3_get_group_average.py
+    ├── FIG7_ballsqueezing_images.py
+    ├── FIG7_ballsqueezing_timeseries_plot.py
     └── batch_codes/                    # Batch processing scripts
         ├── batch_STEP1_preprocess/
         └── batch_STEP2_image_recon/
@@ -571,25 +571,29 @@ The ball squeezing analysis:
 #### **STEP 1: HRF Estimation**
 Preprocess data and estimate HRFs for each subject.
 
-**Script**: `ball_squeezing_analysis/FIG8_STEP1_hrf_estimation.py`
+**Script**: `ball_squeezing_analysis/FIG7_STEP1_hrf_estimation.py`
 
 **Configuration**:
 ```python
 ROOT_DIR = '/path/to/ball_squeezing_dataset'
 TASK = 'BS'  # Ball squeezing task
 N_RUNS = 3  # Number of runs per subject
-NOISE_MODEL = 'ols'  # or 'ar_irls'
-EXCLUDED = []  # Bad subjects
+NOISE_MODEL = 'ar_irls'  # or 'ols'
+RUN_PREPROCESS = True  # If True, run preprocessing; else load saved data
+RUN_HRF_ESTIMATION = True  # If True, run GLM to estimate HRF
+SAVE_RESIDUAL = True  # If True, save GLM residuals
 
-# GLM parameters
+# GLM parameters (configured based on NOISE_MODEL)
 cfg_GLM = {
-    'do_drift': True,
-    'do_drift_legendre': False
+    'do_drift': False,  # True for 'ols', False for 'ar_irls'
+    'do_drift_legendre': True,  # False for 'ols', True for 'ar_irls'
     'do_short_sep': True,
     'drift_order': 3,
     'distance_threshold': 20 * units.mm,
     't_pre': 2 * units.s,
-    't_post': 10 * units.s,
+    't_post': 15 * units.s,
+    't_delta': 1 * units.s,
+    't_std': 1 * units.s,
 }
 
 # Channel quality thresholds
@@ -602,7 +606,7 @@ cfg_prune = {
 
 **Run**:
 ```bash
-python FIG8_STEP1_hrf_estimation.py
+python FIG7_STEP1_hrf_estimation.py
 ```
 
 **Process**:
@@ -616,10 +620,11 @@ python FIG8_STEP1_hrf_estimation.py
 5. **Save Results**: HRF estimates and measurement covariance per subject
 
 **Output Files** (per subject, saved to `<ROOT_DIR>/derivatives/cedalion/processed_data/<subject>/`):
-- `<subject>_task-BS_preprocessed_results_ols.pkl.gz`
+- `<subject>_task-BS_preprocessed_results_ar_irls.pkl`
   - Contains: `all_runs`, `chs_pruned`, `all_stims`, `geo3d`
-- `<subject>_task-BS_conc_o_hrf_estimates_ols.pkl.gz`
+- `<subject>_task-BS_conc_o_hrf_estimates_ar_irls.pkl.gz`
   - Contains: `hrf_per_subj`, `hrf_mse_per_subj`, `bad_indices`
+- `<subject>_task-BS_conc_o_glm_residual_ar_irls.pkl` (optional if SAVE_RESIDUAL=True)
 
 **Expected Runtime**: ~1-20 minutes per subject depending on GLM solve method used
 
@@ -628,34 +633,50 @@ python FIG8_STEP1_hrf_estimation.py
 #### **STEP 2: Image Reconstruction**
 Reconstruct cortical images from estimated HRFs.
 
-**Script**: `ball_squeezing_analysis/FIG8_STEP2_image_recon_on_HRF.py`
+**Script**: `ball_squeezing_analysis/FIG7_STEP2_image_recon_on_HRF.py`
 
 **Configuration**:
 ```python
+NOISE_MODEL = 'ar_irls'  # Should match STEP 1
+TASK = 'BS'
+REC_STR = 'conc_o'  # Record string from STEP 1
+CMEAS_FLAG = True  # Use measurement covariance for reconstruction
+MAG_TS_FLAG = 'TS'  # 'MAG' for magnitude images, 'TS' for full timeseries
+T_WIN = [5, 8]  # Time window (seconds) for magnitude calculation if MAG_TS_FLAG='MAG'
+lambda_R = 1e-6  # Ridge parameter for spatial regularization
+
+# Parameter configurations to test
 cfg_list = [
-    {"alpha_meas": 1e4, "alpha_spatial": 1e-3, "lambda_R": 1e-6, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e2, "alpha_spatial": 1e-3, "lambda_R": 1e-6, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e4, "alpha_spatial": 1e-2, "lambda_R": 1e-6, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
-    {"alpha_meas": 1e2, "alpha_spatial": 1e-2, "lambda_R": 1e-6, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e4, "alpha_spatial": 1e-3, "lambda_R": lambda_R, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e4, "alpha_spatial": 1e-3, "lambda_R": lambda_R, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e4, "alpha_spatial": 1e-2, "lambda_R": lambda_R, "DIRECT": False, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e4, "alpha_spatial": 1e-2, "lambda_R": lambda_R, "DIRECT": True, "SB": True, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e2, "alpha_spatial": 1e-3, "lambda_R": lambda_R, "DIRECT": False, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    {"alpha_meas": 1e2, "alpha_spatial": 1e-3, "lambda_R": lambda_R, "DIRECT": True, "SB": False, "sigma_brain": 1, "sigma_scalp": 5},
+    # ... more configurations
 ]
 
-# Time window for averaging to get magnitude images 
-MAG_TS_FLAG = 'mag' # 'mag' if want magnitude images, 'ts' if want the full timeseries in image space
-T_AVG = [4, 7]  # seconds to average over if just interested in magnitude images
+# MSE configuration for bad channel handling
+cfg_mse = {
+    'mse_val_for_bad_data': 1e1,
+    'mse_amp_thresh': 1e-3 * units.V,
+    'blockaverage_val': 0,
+    'mse_min_thresh': 1e-6
+}
 ```
 
 **Run**:
 ```bash
-python FIG8_STEP2_image_recon_on_HRF.py
+python FIG7_STEP2_image_recon_on_HRF.py
 ```
 
 **Process**:
 1. Loads per-subject HRF estimates from STEP 1
 2. Converts HRF to optical density
-3. Builds spatial basis functions (if enabled)
-4. Computes reconstruction matrix W
+3. Builds spatial basis functions (if SB=True)
+4. Computes reconstruction matrix W for each configuration
 5. Reconstructs image for each subject/trial_type
-6. Saves full time-course or magnitude images
+6. Saves full time-series (if MAG_TS_FLAG='TS') or magnitude images (if MAG_TS_FLAG='MAG')
 
 **Output Files** (per subject, saved to `<ROOT_DIR>/derivatives/cedalion/processed_data/image_space/<subject>/`):
 - `<subject>_task-BS_images_direct_sb-{sigma}mm_alpha-{alpha}.pkl.gz`
@@ -668,7 +689,7 @@ python FIG8_STEP2_image_recon_on_HRF.py
 #### **STEP 3: Group Average**
 Compute group-level statistics across subjects.
 
-**Script**: `ball_squeezing_analysis/FIG8_STEP3_get_group_average.py`
+**Script**: `ball_squeezing_analysis/FIG7_STEP3_get_group_average.py`
 
 **Configuration**:
 ```python
@@ -679,7 +700,7 @@ SIGMA_SMOOTH = 80 * units.mm  # Spatial smoothing kernel
 
 **Run**:
 ```bash
-python FIG8_STEP3_get_group_average.py
+python FIG7_STEP3_get_group_average.py
 ```
 
 **Process**:
@@ -699,13 +720,13 @@ python FIG8_STEP3_get_group_average.py
 Create publication-quality figures.
 
 **Scripts**:
-- `ball_squeezing_analysis/FIG8_ballsqueezing_images.py`: Surface activation maps
-- `ball_squeezing_analysis/FIG8_ballsqueezing_timeseries_plot.py`: Time-course plots
+- `ball_squeezing_analysis/FIG7_ballsqueezing_images.py`: Surface activation maps
+- `ball_squeezing_analysis/FIG7_ballsqueezing_timeseries_plot.py`: Time-course plots
 
 **Run**:
 ```bash
-python FIG8_ballsqueezing_images.py
-python FIG8_ballsqueezing_timeseries_plot.py
+python FIG7_ballsqueezing_images.py
+python FIG7_ballsqueezing_timeseries_plot.py
 ```
 
 **Outputs**:
