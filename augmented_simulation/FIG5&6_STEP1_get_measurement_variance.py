@@ -138,7 +138,7 @@ SNR_THRESH = 5 # signal to noise ratio threshold
 SAVE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'augmented_data')
 os.makedirs(SAVE_DIR, exist_ok=True)
 
-PROBE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'fw', HEAD_MODEL)
+PROBE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'fw', 'probe')
 
 dirs = os.listdir(ROOT_DIR)
 SUBJECT_LIST = [d for d in dirs if 'sub' in d and d not in EXCLUDED]

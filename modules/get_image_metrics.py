@@ -436,13 +436,13 @@ def get_CNR_v2(image, image_cov):
         Contrast-to-noise ratio at peak vertex (max_amplitude / sqrt(variance)).
     """
     
-     max_vertex_idx = image.argmax()
-     contrast = image.max()
-     
-     noise = image_cov[max_vertex_idx]
-     CNR = contrast/noise
-     
-     return CNR
+    max_vertex_idx = image.argmax()
+    contrast = image.max()
+    
+    noise = image_cov[max_vertex_idx]
+    CNR = contrast/noise
+    
+    return CNR
 
 def get_localization_error(origin, image, head, ROI_threshold=0.01):
     """

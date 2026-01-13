@@ -166,7 +166,7 @@ dpf = xr.DataArray(
 )
 E = nirs.get_extinction_coefficients("prahl", Adot.wavelength)
 
-for cfg in cfg_list:
+for cfg in cfg_list[2:5]:
     F = None
     D = None
     max_eig = None
@@ -280,10 +280,6 @@ for cfg in cfg_list:
 
         od_mse = od_mse.stack(measurement=("channel", "wavelength")).sortby("wavelength")
         od_mse = od_mse.transpose("measurement", "time")
-        if MAG_TS_FLAG == "MAG":
-            template = X_hrf
-        else:
-            template = X_hrf.isel(time=0).squeeze()
 
         if DIRECT:
             Adot_tmp = irf.get_Adot_scaled(Adot, Adot.wavelength)

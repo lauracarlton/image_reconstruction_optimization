@@ -508,7 +508,7 @@ def get_short_regressors(runs, pruned_chans_list, geo3d, cfg_GLM):
     for run, pruned_chans in zip(runs, pruned_chans_list):
 
         rec_pruned = prune_mask_ts(run, pruned_chans) # !!! how is this affected when using pruned data
-        _, ts_short = cedalion.nirs.split_long_short_channels(
+        _, ts_short = nirs.split_long_short_channels(
                                 rec_pruned, geo3d, distance_threshold= cfg_GLM['distance_threshold']  # !!! change to rec_pruned once NaN prob fixed
                                 )
 
@@ -563,7 +563,7 @@ def concatenate_runs(runs, stim):
         new_time = time + CURRENT_OFFSET
 
         ts_new = ts.copy(deep=True)
-        ts_new = ts_new.pint.to('molar')
+        ts_new = ts_new.pint.dequantify().pint.quantify('molar')
         ts_new = ts_new.assign_coords(time=new_time)
 
         stim_shift = s.copy()
@@ -750,4 +750,4 @@ def compute_Hglobal_from_PCA(data_xr, variances, W):
     final_dims = ['trial_type'] if 'trial_type' in dx.dims else []
     final_dims += ['subj', 'chromo', 'vertex', time_dim]
 
-     return Hglob.transpose(*final_dims)
+    return Hglob.transpose(*final_dims)

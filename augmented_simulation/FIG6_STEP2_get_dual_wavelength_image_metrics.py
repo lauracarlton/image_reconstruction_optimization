@@ -134,7 +134,7 @@ sigma_scalp_list = [0, 5]*units.mm
 
 #%% SETUP DOWNSTREAM CONFIGS
 SAVE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'augmented_data')
-PROBE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'fw', HEAD_MODEL)
+PROBE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'fw', 'probe')
 
 os.makedirs(SAVE_DIR, exist_ok=True)
 
@@ -254,8 +254,10 @@ for sigma_brain in sigma_brain_list:
             
             F_direct = None
             D_direct = None
+            max_eig_direct = None
             F_indirect = None
             D_indirect = None
+            max_eig_indirect = None
 
             for ii, seed_vertex in enumerate(VERTEX_LIST):
                 print(f'\t\t\tseed vertex = {ii+1}/{len(VERTEX_LIST)}')
@@ -275,7 +277,7 @@ for sigma_brain in sigma_brain_list:
                             print(f'\t\t\t\t\t\tsubject: {subject}')
                             
                             C_meas = C_meas_list.sel(vertex=seed_vertex, subject=subject)
-                            C_meas_dir = C_meas.stack(measurement=('channel', 'wavelength')).sortby('wavelength')
+                            C_meas = C_meas.stack(measurement=('channel', 'wavelength')).sortby('wavelength')
     
                             W_direct, D_direct, F_direct, max_eig_direct = irf.calculate_W(A_dual_wl, 
                                                                         lambda_R=lambda_R, 
@@ -448,7 +450,7 @@ for sigma_brain in sigma_brain_list:
                         X_mse_weighted_between_subjects_indirect = X_mse_weighted_between_subjects_indirect.pint.dequantify()
                         
                         # get the weighted average
-                        mse_btw_within_sum_subj = all_subj_X_mse_indirect + X_mse_weighted_between_subjects_indirect
+                        mse_btw_within_sum_subj = all_subj_X_mse_indirect.pint.dequantify() + X_mse_weighted_between_subjects_indirect
                         denom = (1/mse_btw_within_sum_subj).sum('subj')
                         
                         X_hrf_mag_mean_weighted_indirect = (all_subj_X_hrf_mag_indirect / mse_btw_within_sum_subj).sum('subj')

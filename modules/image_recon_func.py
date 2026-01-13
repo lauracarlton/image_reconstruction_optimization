@@ -746,7 +746,7 @@ def _get_image_brain_scalp_indirect(y, W, SB=False, G=None):
     W_indirect_wl0 = W.isel(wavelength=0)
     W_indirect_wl1 = W.isel(wavelength=1)
     
-    if len(y.shape) > 1:
+    if len(y.shape) > 2:
         y = y.transpose('channel', 'time', 'wavelength')
 
     y_wl0 = y.isel(wavelength=0) 

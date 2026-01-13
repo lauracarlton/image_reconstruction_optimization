@@ -128,7 +128,7 @@ sigma_scalp_list = [0, 10] *units.mm
 
 #%% SETUP DOWNSTREAM CONFIGS
 SAVE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'augmented_data')
-PROBE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'fw', HEAD_MODEL)
+PROBE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'fw', 'probe')
 
 dirs = os.listdir(ROOT_DIR)
 subject_list = [d for d in dirs if 'sub' in d and d not in EXCLUDED]
@@ -210,10 +210,9 @@ for sigma_brain in sigma_brain_list:
            
             print(f'\t\talpha_spatial = {alpha_spatial}')
             
-            F_direct = None
-            D_direct = None
             F_indirect = None
             D_indirect = None
+            max_eig_indirect = None
 
             for ii, seed_vertex in enumerate(VERTEX_LIST):
                 print(f'\t\t\tseed vertex = {ii+1}/{len(VERTEX_LIST)}')

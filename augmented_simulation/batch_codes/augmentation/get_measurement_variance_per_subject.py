@@ -138,7 +138,7 @@ D_RANGE = [1e-3, 0.84] # mean signal amplitude min and max
 SNR_THRESH = 5 # signal to noise ratio threshold
 
 #%% SETUP DOWNSTREAM CONFIGURABLES
-SAVE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'augmented_data')
+SAVE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'augmented_data', 'batch_results', 'data_augmentation')
 os.makedirs(SAVE_DIR, exist_ok=True)
 
 PROBE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'fw', 'probe')

@@ -90,12 +90,13 @@ from cedalion.io.forward_model import load_Adot
 # import my own functions from a different directorys
 sys.path.append("/projectnb/nphfnirs/s/users/lcarlton/ANALYSIS_CODE/imaging_paper_figure_code/modules/")
 import image_recon_func as irf  
+import spatial_basis_func as sbf
 
 # Turn off all warnings
 warnings.filterwarnings("ignore")
 
 # %% set up config parameters
-ROOT_DIR = os.path.join("/projectnb", "nphfnirs", "s", "datasets", "BSMW_Laura_Miray_2025", "BS_bids")
+ROOT_DIR = os.path.join("/projectnb", "nphfnirs", "s", "datasets", "BSMW_Laura_Miray_2025", "BS_bids_v2")
 NOISE_MODEL = "ar_irls"
 TASK = "BS"
 REC_STR = "conc_o"
@@ -119,7 +120,7 @@ cfg_mse = {"mse_val_for_bad_data": 1e1, "mse_amp_thresh": 1e-3 * units.V, "block
 dirs = os.listdir(ROOT_DIR)
 subject_list = [d for d in dirs if "sub" in d and d not in EXCLUDED]
 
-PROBE_DIR = os.path.join(ROOT_DIR, "derivatives", "cedalion", "fw", HEAD_MODEL)
+PROBE_DIR = os.path.join(ROOT_DIR, "derivatives", "cedalion", "fw", 'probe')
 
 # %% load head model
 head, PARCEL_DIR = irf.load_head_model(HEAD_MODEL, with_parcels=True)
@@ -148,13 +149,13 @@ for cfg in cfg_list:
     alpha_spatial = cfg["alpha_spatial"]
     lambda_R = cfg["lambda_R"]
 
-    if os.path.exists(PROBE_DIR + f"G_matrix_sigmabrain-{float(sigma_brain)}.pkl") and os.path.exists(
-        PROBE_DIR + f"G_matrix_sigmascalp-{float(sigma_scalp)}.pkl"):
+    if os.path.exists(os.path.join(PROBE_DIR, f"G_matrix_sigmabrain-{float(sigma_brain)}.pkl")) and os.path.exists(
+        os.path.join(PROBE_DIR, f"G_matrix_sigmascalp-{float(sigma_scalp)}.pkl")):
         G_EXISTS = True
-        with open(PROBE_DIR + f"G_matrix_sigmabrain-{float(sigma_brain)}.pkl", "rb") as f:
+        with open(os.path.join(PROBE_DIR, f"G_matrix_sigmabrain-{float(sigma_brain)}.pkl"), "rb") as f:
             G_brain = pickle.load(f)
 
-        with open(PROBE_DIR + f"G_matrix_sigmascalp-{float(sigma_scalp)}.pkl", "rb") as f:
+        with open(os.path.join(PROBE_DIR, f"G_matrix_sigmascalp-{float(sigma_scalp)}.pkl"), "rb") as f:
             G_scalp = pickle.load(f)
 
         G = {"G_brain": G_brain, "G_scalp": G_scalp}
@@ -275,14 +276,17 @@ for cfg in cfg_list:
 
                 G_EXISTS = True
 
-            od_mse = od_mse.stack(measurement=("channel", "wavelength")).sortby("wavelength")
-            od_mse = od_mse.transpose("measurement", "time")
-            if MAG_TS_FLAG == "MAG":
-                template = X_hrf
-            else:
-                template = X_hrf.isel(time=0).squeeze()
+            if DIRECT:
+                Adot_tmp = irf.get_Adot_scaled(Adot, Adot.wavelength)
+                if SB:
+                    Adot_tmp = sbf.get_H_stacked(G, Adot_tmp)
 
-            X_mse = irf.get_image_noise_posterior(Adot, 
+            else: 
+                Adot_tmp = Adot
+                if SB:
+                    Adot_tmp = sbf.get_H(G, Adot_tmp)
+                    
+            X_mse = irf.get_image_noise_posterior(Adot_tmp, 
                                                 W, 
                                                 alpha_spatial=alpha_spatial, 
                                                 lambda_R=lambda_R,

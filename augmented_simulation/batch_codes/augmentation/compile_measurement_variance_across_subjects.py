@@ -8,6 +8,7 @@ import numpy as np
 #%%
 ROOT_DIR = os.path.join('/projectnb', 'nphfnirs', 's', 'datasets', 'BSMW_Laura_Miray_2025', 'BS_bids_v2')
 SAVE_DIR = os.path.join(ROOT_DIR, 'derivatives', 'cedalion', 'augmented_data')
+BATCH_DIR = os.path.join(SAVE_DIR, 'batch_results', 'data_augmentation')
 
 EXCLUDED = ['sub-577'] # does not contain RS data 
 BLOB_SIGMA = 15
@@ -23,7 +24,7 @@ C_meas_all = []
 for subject in SUBJECT_LIST: 
 
 
-    with open(os.path.join(SAVE_DIR, f"C_meas_sub-{subject}_task-{TASK}_blob-{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_{NOISE_MODEL}.pkl"), 'rb') as f:
+    with open(os.path.join(BATCH_DIR, f"C_meas_sub-{subject}_task-{TASK}_blob-{BLOB_SIGMA}mm_scale-{SCALE_FACTOR}_{NOISE_MODEL}.pkl"), 'rb') as f:
         C_meas_lst = pickle.load(f)
     
     C_meas_all.append(C_meas_lst)

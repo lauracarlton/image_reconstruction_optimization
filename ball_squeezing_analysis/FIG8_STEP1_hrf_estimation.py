@@ -94,13 +94,13 @@ import cedalion.sigproc.motion_correct as motion
 from cedalion.sigproc.frequency import freq_filter
 
 sys.path.append("/projectnb/nphfnirs/s/users/lcarlton/ANALYSIS_CODE/imaging_paper_figure_code/modules/")
-import processing_func as pf  # noqa: E402
+import processing_func as pf
 
 # Turn off all warnings
 warnings.filterwarnings("ignore")
 
 # %% Initial root directory and analysis parameters
-ROOT_DIR = os.path.join("/projectnb", "nphfnirs", "s", "datasets", "BSMW_Laura_Miray_2025", "BS_bids")
+ROOT_DIR = os.path.join("/projectnb", "nphfnirs", "s", "datasets", "BSMW_Laura_Miray_2025", "BS_bids_v2")
 RUN_PREPROCESS = True
 RUN_HRF_ESTIMATION = True
 SAVE_RESIDUAL = False
@@ -112,7 +112,7 @@ EXCLUDED = []
 dirs = os.listdir(ROOT_DIR)
 subject_list = [d for d in dirs if "sub" in d and d not in EXCLUDED]
 
-PROBE_DIR = os.path.join(ROOT_DIR, "derivatives", "cedalion", "fw", "ICBM152")
+PROBE_DIR = os.path.join(ROOT_DIR, "derivatives", "cedalion", "fw", "probe")
 
 Adot = load_Adot(os.path.join(PROBE_DIR, "Adot.nc"))
 
